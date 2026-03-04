@@ -1,0 +1,19 @@
+{
+  "name": "excel-cells",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "scripts": {
+    "start": "tsx index.ts"
+  },
+  "dependencies": {
+    "@zip.js/zip.js": "^2.8.21",
+    "@xmldom/xmldom": "^0.8.10",
+    "adm-zip": "^0.5.16"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.3",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}
