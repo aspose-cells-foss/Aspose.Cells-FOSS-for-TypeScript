@@ -1,4 +1,4 @@
-import { Workbook, Worksheet, Cell, Style } from "../excel";
+import { Workbook, Worksheet, Cell, Style } from "../aspose_cells";
 
 export async function testWorksheetManagement() {
   console.log("Testing worksheet management...");

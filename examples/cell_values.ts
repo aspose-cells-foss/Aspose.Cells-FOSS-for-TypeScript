@@ -1,4 +1,4 @@
-import { Workbook, Cell, SaveFormat } from "../excel";
+import { Workbook, Cell, SaveFormat } from "../aspose_cells";
 
 export async function testCellValues() {
   console.log("Testing cell values...");

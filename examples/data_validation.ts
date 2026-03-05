@@ -1,4 +1,4 @@
-import { Workbook, Worksheet, DataValidation } from "../excel";
+import { Workbook, Worksheet, DataValidation } from "../aspose_cells";
 
 export async function testDataValidation() {
   console.log("Testing data validation...");
