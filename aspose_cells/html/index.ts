@@ -44,7 +44,7 @@ export class HtmlDocument {
 
   toWorkbook(options?: HtmlParseOptions): Workbook {
     const workbook = new Workbook();
-    workbook.worksheets2.length = 0;
+    workbook.worksheets.length = 0;
 
     for (const table of this._tables) {
       const worksheet = workbook.addWorksheet(
@@ -263,7 +263,7 @@ export class HtmlWriter {
   static fromWorkbook(workbook: Workbook, options?: HtmlSaveOptions): string {
     const tables: string[] = [];
 
-    for (const worksheet of workbook.worksheets2) {
+    for (const worksheet of workbook.worksheets) {
       const table = HtmlWriter.fromWorksheet(worksheet, options);
       tables.push(table);
     }

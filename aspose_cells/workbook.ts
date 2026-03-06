@@ -12,7 +12,8 @@ import {
   addZipEntry,
   finalizeZip,
 } from "./util";
-import { writeFile } from "fs/promises";
+import { writeFile, readFile } from "fs/promises";
+import { HtmlDocument } from "./html/index";
 
 export class Workbook {
   private _worksheets: Worksheet[] = [];
@@ -28,6 +29,15 @@ export class Workbook {
   static async load(filePath: string, password?: string): Promise<Workbook> {
     const workbook = new Workbook();
     workbook._password = password;
+
+    const ext = filePath.toLowerCase().split(".").pop();
+    if (ext === "html" || ext === "htm") {
+      const htmlDoc = await HtmlDocument.load(filePath);
+      const wb = htmlDoc.toWorkbook();
+      workbook._worksheets = wb.worksheets;
+      return workbook;
+    }
+
     await workbook.loadFile(filePath);
     return workbook;
   }
@@ -176,7 +186,6 @@ export class Workbook {
     return this._worksheets[0];
   }
 
- 
   get sharedStrings(): string[] {
     return this._sharedStrings;
   }
