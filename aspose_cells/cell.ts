@@ -18,6 +18,7 @@ export class Cell {
   private _value: CellValue = null;
   private _formula?: string;
   private _style?: Style;
+  private _styleIndex?: number;
   private _hyperlink?: string;
 
   constructor(row: number, col: number, value?: CellValue) {
@@ -75,6 +76,14 @@ export class Cell {
   setStyle(style: Style) {
     this._style = style;
     return this;
+  }
+
+  setStyleIndex(index: number) {
+    this._styleIndex = index;
+  }
+
+  get styleIndex(): number | undefined {
+    return this._styleIndex;
   }
 
   get hyperlink(): string | undefined {

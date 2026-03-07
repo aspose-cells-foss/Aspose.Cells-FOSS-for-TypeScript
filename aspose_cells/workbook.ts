@@ -1,4 +1,5 @@
 import { Worksheet } from "./worksheet";
+import { WorksheetCollection } from "./worksheetCollection";
 import { Cell } from "./cell";
 import { DOMParser } from "@xmldom/xmldom";
 import { CellValue, Style, SaveFormat } from "./types";
@@ -12,18 +13,24 @@ import {
   addZipEntry,
   finalizeZip,
 } from "./util";
-import { writeFile, readFile } from "fs/promises";
-import { HtmlDocument } from "./html/index";
+import { writeFile, mkdir } from "fs/promises";
+import { existsSync } from "fs";
+import { dirname, join } from "path";
+import {
+  HtmlDocument,
+  HtmlExporter,
+  worksheetToHtml,
+  workbookToHtmlFull,
+} from "./html/index";
 
 export class Workbook {
-  private _worksheets: Worksheet[] = [];
+  private _sheets: WorksheetCollection;
   private _sharedStrings: string[] = [];
-  private _styles: Map<number, Style> = new Map();
   private _protected = false;
   private _password?: string;
 
   constructor() {
-    this._worksheets.push(new Worksheet("Sheet1", 0));
+    this._sheets = new WorksheetCollection();
   }
 
   static async load(filePath: string, password?: string): Promise<Workbook> {
@@ -34,12 +41,52 @@ export class Workbook {
     if (ext === "html" || ext === "htm") {
       const htmlDoc = await HtmlDocument.load(filePath);
       const wb = htmlDoc.toWorkbook();
-      workbook._worksheets = wb.worksheets;
+      workbook._sheets = wb._sheets;
       return workbook;
     }
 
     await workbook.loadFile(filePath);
     return workbook;
+  }
+
+  get worksheets(): Worksheet[] {
+    return this._sheets.worksheets;
+  }
+
+  get worksheetCount(): number {
+    return this._sheets.worksheetCount;
+  }
+
+  get worksheet(): Worksheet {
+    return this._sheets.worksheet;
+  }
+
+  get styles(): Map<number, Style> {
+    return this._sheets.styles;
+  }
+
+  get sharedStrings(): string[] {
+    return this._sharedStrings;
+  }
+
+  get isProtected(): boolean {
+    return this._protected;
+  }
+
+  getNumFmt(numFmtId: string | null): string {
+    return this._sheets.getNumFmt(numFmtId);
+  }
+
+  addWorksheet(name?: string): Worksheet {
+    return this._sheets.addWorksheet(name);
+  }
+
+  removeWorksheet(index: number): boolean {
+    return this._sheets.removeWorksheet(index);
+  }
+
+  moveWorksheet(fromIndex: number, toIndex: number): boolean {
+    return this._sheets.moveWorksheet(fromIndex, toIndex);
   }
 
   private async loadFile(filePath: string) {
@@ -75,13 +122,31 @@ export class Workbook {
     if (!content) return;
     const parser = new DOMParser();
     const doc = parser.parseFromString(content, "text/xml");
+
     const cellXfs = doc.getElementsByTagName("cellXfs")[0];
     if (!cellXfs) return;
     const xfs = cellXfs.getElementsByTagName("xf");
+
     for (let i = 0; i < xfs.length; i++) {
       const xf = xfs[i];
-      this._styles.set(i, {
+      const numFmtId = xf.getAttribute("numFmtId");
+      const numFmt = this.getNumFmt(numFmtId);
+      const alignment = xf.getElementsByTagName("alignment")[0];
+
+      let textAlign = "general";
+      let verticalAlign = "bottom";
+      if (alignment) {
+        textAlign = alignment.getAttribute("horizontal") || "general";
+        verticalAlign = alignment.getAttribute("vertical") || "bottom";
+      }
+
+      this._sheets.setStyle(i, {
         font: { name: "Calibri", size: 11 },
+        numberFormat: numFmt,
+        alignment: {
+          horizontal: textAlign as any,
+          vertical: verticalAlign as any,
+        },
       });
     }
   }
@@ -92,7 +157,6 @@ export class Workbook {
     const parser = new DOMParser();
     const doc = parser.parseFromString(content, "text/xml");
     const sheets = doc.getElementsByTagName("sheet");
-    this._worksheets = [];
     for (let i = 0; i < sheets.length; i++) {
       const sheet = sheets[i];
       const name = sheet.getAttribute("name") ?? `Sheet${i + 1}`;
@@ -119,7 +183,7 @@ export class Workbook {
 
       const worksheet = new Worksheet(name, i);
       await this.loadWorksheetData(zip, worksheet, target);
-      this._worksheets.push(worksheet);
+      this._sheets.worksheets.push(worksheet);
     }
   }
 
@@ -169,53 +233,22 @@ export class Workbook {
           value = t?.textContent ?? "";
         }
 
-        worksheet.putValue(ref, value);
+        const cellRef = worksheet.putValue(ref, value);
+        const styleIdx = cell.getAttribute("s");
+        if (styleIdx) {
+          const styleIndex = parseInt(styleIdx, 10);
+          const style = this._sheets.styles.get(styleIndex);
+          if (style) {
+            cellRef.setStyleIndex(styleIndex);
+          }
+        }
       }
     }
-  }
-
-  get worksheets(): Worksheet[] {
-    return this._worksheets;
-  }
-
-  get worksheetCount(): number {
-    return this._worksheets.length;
-  }
-
-  get worksheet(): Worksheet {
-    return this._worksheets[0];
-  }
-
-  get sharedStrings(): string[] {
-    return this._sharedStrings;
-  }
-
-  addWorksheet(name?: string): Worksheet {
-    const index = this._worksheets.length;
-    const sheetName = name ?? `Sheet${index + 1}`;
-    const worksheet = new Worksheet(sheetName, index);
-    this._worksheets.push(worksheet);
-    return worksheet;
-  }
-
-  removeWorksheet(index: number) {
-    if (index >= 0 && index < this._worksheets.length) {
-      this._worksheets.splice(index, 1);
-    }
-  }
-
-  moveWorksheet(fromIndex: number, toIndex: number) {
-    const sheet = this._worksheets.splice(fromIndex, 1)[0];
-    this._worksheets.splice(toIndex, 0, sheet);
   }
 
   protect(protect: boolean, password?: string) {
     this._protected = protect;
     this._password = password;
-  }
-
-  get isProtected(): boolean {
-    return this._protected;
   }
 
   async save(
@@ -225,8 +258,23 @@ export class Workbook {
     const format = options?.saveFormat || this.detectFormat(filePath);
 
     if (format === SaveFormat.HTML) {
-      const html = this.toHtml();
-      await writeFile(filePath, html);
+      const dir = dirname(filePath);
+      const fileName =
+        filePath
+          .replace(/\.[^.]+$/, "")
+          .split(/[/\\]/)
+          .pop() || "sheet";
+      const htmlDir = join(dir, fileName + "_files");
+
+      if (!existsSync(dir)) {
+        await mkdir(dir, { recursive: true });
+      }
+      if (!existsSync(htmlDir)) {
+        await mkdir(htmlDir, { recursive: true });
+      }
+
+      const exporter = new HtmlExporter(this);
+      await exporter.saveAsHtmlFrameset(filePath, htmlDir, fileName);
       return;
     }
 
@@ -246,85 +294,7 @@ export class Workbook {
   }
 
   toHtml(): string {
-    let html = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
-<html xmlns:v="urn:schemas-microsoft-com:vml"
-xmlns:o="urn:schemas-microsoft-com:office:office"
-xmlns:x="urn:schemas-microsoft-com:office:excel"
-xmlns="http://www.w3.org/TR/REC-html40">
-
-<head>
-<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
-<meta name="ProgId" content="Excel.Sheet"/>
-<meta name="Generator" content="Aspose.Cells FOSS for TypeScript"/>
-<style>
-<!--table
- {mso-displayed-decimal-separator:"\\.";
- mso-displayed-thousand-separator:"\\,";}
-@page
- {
- margin:1in 0.75in 1in 0.75in;
- mso-header-margin:0.5in;
- mso-footer-margin:0.5in;
- mso-page-orientation:Portrait;
- }
-tr
- {mso-height-source:auto;
- mso-ruby-visibility:none;}
-col
- {mso-width-source:auto;
- mso-ruby-visibility:none;}
-br
- {mso-data-placement:same-cell;}
-ruby
- {ruby-align:start;}
-.style0
- {
- mso-number-format:General;
- text-align:general;
- vertical-align:middle;
- white-space:nowrap;
- background:auto;
- mso-pattern:auto;
- color:#000000;
- font-size:10pt;
- font-weight:400;
- font-style:normal;
- font-family:Arial,sans-serif;
- mso-protection:locked visible;
- mso-style-name:Normal;
- mso-style-id:0;}
-td
- {mso-style-parent:style0;
- mso-number-format:General;
- text-align:general;
- vertical-align:middle;
- white-space:nowrap;
- background:auto;
- mso-pattern:auto;
- color:#000000;
- font-size:10pt;
- font-weight:400;
- font-style:normal;
- font-family:Arial,sans-serif;
- mso-protection:locked visible;
- mso-ignore:padding;
- }
--->
-</style>
-</head>
-<body link='blue' vlink='purple' >
-`;
-
-    for (let i = 0; i < this._worksheets.length; i++) {
-      const sheet = this._worksheets[i];
-      html += sheet.toHtml();
-    }
-
-    html += `
-</body>
-
-</html>`;
-    return html;
+    return workbookToHtmlFull(this);
   }
 
   private async writeToZip(
@@ -351,8 +321,8 @@ td
       await addZipEntry(zip, "xl/sharedStrings.xml", sharedStringsXml);
     }
 
-    for (let i = 0; i < this._worksheets.length; i++) {
-      const sheet = this._worksheets[i];
+    for (let i = 0; i < this._sheets.worksheets.length; i++) {
+      const sheet = this._sheets.worksheets[i];
       await addZipEntry(zip, `xl/worksheets/sheet${i + 1}.xml`, sheet.getXml());
     }
   }
@@ -376,7 +346,7 @@ td
     let xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml" /><Default Extension="xml" ContentType="application/xml" /><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml" /><Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml" /><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml" /><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml" /><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml" />`;
 
     // Add each worksheet override
-    for (let i = 0; i < this._worksheets.length; i++) {
+    for (let i = 0; i < this._sheets.worksheets.length; i++) {
       xml += `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml" />`;
     }
 
@@ -392,8 +362,8 @@ td
   private generateWorkbook(): string {
     let xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="x15" xmlns:x15="http://schemas.microsoft.com/office/spreadsheetml/2010/11/main"><fileVersion appName="xl" lastEdited="4" lowestEdited="4" rupBuild="9302" /><workbookPr /><bookViews><workbookView xWindow="240" yWindow="120" windowWidth="14940" windowHeight="9225" activeTab="0" /></bookViews><sheets>`;
 
-    for (let i = 0; i < this._worksheets.length; i++) {
-      const sheet = this._worksheets[i];
+    for (let i = 0; i < this._sheets.worksheets.length; i++) {
+      const sheet = this._sheets.worksheets[i];
       const rid = this._sharedStrings.length > 0 ? 3 : 2;
       xml += `<sheet name="${escapeXml(sheet.name)}" sheetId="${i + 1}" r:id="rId${rid}" />`;
     }
@@ -423,7 +393,7 @@ td
 
   private generateSharedStrings(): string {
     const strings = new Set<string>();
-    for (const sheet of this._worksheets) {
+    for (const sheet of this._sheets.worksheets) {
       for (const cell of sheet.cells) {
         if (typeof cell.value === "string") {
           strings.add(cell.value);
@@ -451,7 +421,7 @@ td
 
   toCsv(): string {
     const lines: string[] = [];
-    const sheet = this._worksheets[0];
+    const sheet = this._sheets.worksheets[0];
     if (!sheet) return "";
 
     const maxRow = Math.max(...Array.from(sheet.cells).map((c) => c.row), 0);
@@ -484,7 +454,7 @@ td
     const data: { sheetName: string; cells: { [key: string]: CellValue } }[] =
       [];
 
-    for (const sheet of this._worksheets) {
+    for (const sheet of this._sheets.worksheets) {
       const sheetData: { [key: string]: CellValue } = {};
       for (const cell of sheet.cells) {
         sheetData[cell.ref] = cell.value;
@@ -497,7 +467,7 @@ td
 
   toMarkdown(): string {
     const lines: string[] = [];
-    const sheet = this._worksheets[0];
+    const sheet = this._sheets.worksheets[0];
     if (!sheet) return "";
 
     const maxRow = Math.max(...Array.from(sheet.cells).map((c) => c.row), 0);

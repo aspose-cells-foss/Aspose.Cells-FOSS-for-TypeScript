@@ -1,12 +1,16 @@
-export { Workbook } from "./workbook"
-export { Worksheet } from "./worksheet"
-export { Cell, Cells } from "./cell"
-export { Style } from "./style"
-export { DataValidation, DataValidationCollection } from "./validation"
-export { Comment, CommentCollection } from "./comment"
-export { AutoFilter } from "./autofilter"
-export { Hyperlink, HyperlinkCollection } from "./hyperlink"
-export { ConditionalFormat, ConditionalFormatCollection } from "./conditionalformat"
+export { Workbook } from "./workbook";
+export { Worksheet } from "./worksheet";
+export { WorksheetCollection } from "./worksheetCollection";
+export { Cell, Cells } from "./cell";
+export { Style } from "./style";
+export { DataValidation, DataValidationCollection } from "./validation";
+export { Comment, CommentCollection } from "./comment";
+export { AutoFilter } from "./autofilter";
+export { Hyperlink, HyperlinkCollection } from "./hyperlink";
+export {
+  ConditionalFormat,
+  ConditionalFormatCollection,
+} from "./conditionalformat";
 
 export type {
   CellValue,
@@ -29,6 +33,15 @@ export type {
   DataBarRule,
   SaveFormat,
   EncryptionType,
-} from "./types"
+} from "./types";
 
-export { colToIndex, indexToCol, cellRef, parseCellRef, parseRange, escapeXml, unescapeXml, generateUuid } from "./util"
+export {
+  colToIndex,
+  indexToCol,
+  cellRef,
+  parseCellRef,
+  parseRange,
+  escapeXml,
+  unescapeXml,
+  generateUuid,
+} from "./util";
