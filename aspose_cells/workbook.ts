@@ -123,6 +123,9 @@ export class Workbook {
     const parser = new DOMParser();
     const doc = parser.parseFromString(content, "text/xml");
 
+    const fonts = doc.getElementsByTagName("fonts")[0];
+    const fontList = fonts?.getElementsByTagName("font") || [];
+
     const cellXfs = doc.getElementsByTagName("cellXfs")[0];
     if (!cellXfs) return;
     const xfs = cellXfs.getElementsByTagName("xf");
@@ -131,21 +134,92 @@ export class Workbook {
       const xf = xfs[i];
       const numFmtId = xf.getAttribute("numFmtId");
       const numFmt = this.getNumFmt(numFmtId);
+
+      let font: any = { name: "Calibri", size: 11 };
+      const fontId = xf.getAttribute("fontId");
+      if (fontId !== null && fontList[parseInt(fontId)]) {
+        const fontEl = fontList[parseInt(fontId)];
+        const nameEl = fontEl.getElementsByTagName("name")[0];
+        const szEl = fontEl.getElementsByTagName("sz")[0];
+        const bEl = fontEl.getElementsByTagName("b")[0];
+        const iEl = fontEl.getElementsByTagName("i")[0];
+        const colorEl = fontEl.getElementsByTagName("color")[0];
+
+        font = {
+          name: nameEl?.getAttribute("val") || "Calibri",
+          size: szEl ? parseInt(szEl.getAttribute("val") || "11") : 11,
+          bold: bEl !== undefined,
+          italic: iEl !== undefined,
+          color: colorEl?.getAttribute("rgb") || colorEl?.getAttribute("theme"),
+        };
+      }
+
+      const fills = doc.getElementsByTagName("fills")[0];
+      const fillList = fills?.getElementsByTagName("fill") || [];
+      let fill: any = {};
+      const fillId = xf.getAttribute("fillId");
+      if (fillId !== null && fillList[parseInt(fillId)]) {
+        const fillEl = fillList[parseInt(fillId)];
+        const patternFill = fillEl.getElementsByTagName("patternFill")[0];
+        if (patternFill) {
+          const patternType = patternFill.getAttribute("patternType");
+          const fgColorEl = patternFill.getElementsByTagName("fgColor")[0];
+          const bgColorEl = patternFill.getElementsByTagName("bgColor")[0];
+          fill = {
+            patternType: patternType || "none",
+            fgColor: fgColorEl?.getAttribute("rgb"),
+            bgColor: bgColorEl?.getAttribute("rgb"),
+          };
+        }
+      }
+
+      const borders = doc.getElementsByTagName("borders")[0];
+      const borderList = borders?.getElementsByTagName("border") || [];
+      let border: any = {};
+      const borderId = xf.getAttribute("borderId");
+      if (borderId !== null && borderList[parseInt(borderId)]) {
+        const borderEl = borderList[parseInt(borderId)];
+        const left = borderEl.getElementsByTagName("left")[0];
+        const right = borderEl.getElementsByTagName("right")[0];
+        const top = borderEl.getElementsByTagName("top")[0];
+        const bottom = borderEl.getElementsByTagName("bottom")[0];
+
+        const parseBorderSide = (el: Element | null): any => {
+          if (!el) return {};
+          return {
+            style: el.getAttribute("style") || undefined,
+            color: el.getElementsByTagName("color")[0]?.getAttribute("rgb"),
+          };
+        };
+
+        border = {
+          left: parseBorderSide(left),
+          right: parseBorderSide(right),
+          top: parseBorderSide(top),
+          bottom: parseBorderSide(bottom),
+        };
+      }
+
       const alignment = xf.getElementsByTagName("alignment")[0];
 
       let textAlign = "general";
       let verticalAlign = "bottom";
+      let wrapText = false;
       if (alignment) {
         textAlign = alignment.getAttribute("horizontal") || "general";
         verticalAlign = alignment.getAttribute("vertical") || "bottom";
+        wrapText = alignment.getAttribute("wrapText") === "1";
       }
 
       this._sheets.setStyle(i, {
-        font: { name: "Calibri", size: 11 },
+        font,
+        fill,
+        border,
         numberFormat: numFmt,
         alignment: {
           horizontal: textAlign as any,
           vertical: verticalAlign as any,
+          wrapText,
         },
       });
     }
@@ -197,6 +271,24 @@ export class Workbook {
 
     const parser = new DOMParser();
     const doc = parser.parseFromString(content, "text/xml");
+
+    const cols = doc.getElementsByTagName("cols")[0];
+    if (cols) {
+      const colElements = cols.getElementsByTagName("col");
+      for (let i = 0; i < colElements.length; i++) {
+        const col = colElements[i];
+        const min = parseInt(col.getAttribute("min") ?? "1", 10) - 1;
+        const max = parseInt(col.getAttribute("max") ?? "1", 10);
+        const width = parseFloat(col.getAttribute("width") ?? "8.43");
+
+        const htmlWidth = Math.round(width * 8);
+
+        for (let c = min; c < max; c++) {
+          worksheet.setColumnWidth(c, htmlWidth);
+        }
+      }
+    }
+
     const rows = doc.getElementsByTagName("row");
 
     for (let i = 0; i < rows.length; i++) {

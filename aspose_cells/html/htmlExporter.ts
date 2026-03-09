@@ -297,14 +297,16 @@ function fnSetActiveSheet(iSh)
 
   private generateStylesheetCss(): string {
     const styles = this.workbook.styles;
-    let css = `﻿body {
--xlnum-format:"0"; 
--xlintent-format: "@"; 
-}
-td {
--xlnum-format:"0"; 
--xlintent-format: "@"; 
-}
+    let css = `﻿tr
+ {mso-height-source:auto;
+ mso-ruby-visibility:none;}
+col
+ {mso-width-source:auto;
+ mso-ruby-visibility:none;}
+br
+ {mso-data-placement:same-cell;}
+ruby
+ {ruby-align:start;}
 .style0
  {
  mso-number-format:General;
@@ -321,17 +323,11 @@ td {
  mso-protection:locked visible;
  mso-style-name:Normal;
  mso-style-id:0;}
-`;
-
-    for (const [index, style] of styles) {
-      const numFmt = style.numberFormat || "General";
-      const align = style.alignment?.horizontal || "general";
-      const valign = style.alignment?.vertical || "bottom";
-      css += `.x${index + 1} {
- mso-style-parent:style0;
- mso-number-format:${numFmt};
- text-align:${align};
- vertical-align:${valign};
+td
+ {mso-style-parent:style0;
+ mso-number-format:General;
+ text-align:general;
+ vertical-align:bottom;
  white-space:nowrap;
  background:auto;
  mso-pattern:auto;
@@ -340,13 +336,107 @@ td {
  font-weight:400;
  font-style:normal;
  font-family:Arial,sans-serif;
- border:none;
  mso-protection:locked visible;
+ mso-ignore:padding;
  }
 `;
+
+    for (const [index, style] of styles) {
+      css += this.generateStyleCss(index + 1, style);
     }
 
     return css;
+  }
+
+  private generateStyleCss(index: number, style: any): string {
+    const numFmt = this.escapeCss(
+      (style.numberFormat || "General").replace(/"/g, '\\"'),
+    );
+    const align = style.alignment?.horizontal || "general";
+    const valign = style.alignment?.vertical || "bottom";
+    const wrapText = style.alignment?.wrapText
+      ? "normal;word-wrap:break-word"
+      : "nowrap";
+
+    let bgColor = "auto";
+    let msoPattern = "auto";
+    if (style.fill?.fgColor) {
+      bgColor = this.convertColor(style.fill.fgColor);
+      msoPattern = style.fill.patternType === "solid" ? "solid" : "auto";
+    } else if (style.fill?.bgColor) {
+      bgColor = this.convertColor(style.fill.bgColor);
+      msoPattern = style.fill.patternType === "solid" ? "solid" : "auto";
+    }
+
+    const fontSize = style.font?.size || 10;
+    const fontWeight = style.font?.bold ? "bold" : "400";
+    const fontStyle = style.font?.italic ? "italic" : "normal";
+    const fontFamily = style.font?.name || "Arial";
+    const fontColor = this.convertColor(style.font?.color) || "#000000";
+
+    let borderCss = "";
+    const borderMap: [string, any][] = [
+      ["top", style.border?.top],
+      ["right", style.border?.right],
+      ["bottom", style.border?.bottom],
+      ["left", style.border?.left],
+    ];
+    for (const [side, border] of borderMap) {
+      if (border?.style) {
+        const borderStyle =
+          border.style === "thick"
+            ? "thick"
+            : border.style === "medium"
+              ? "medium"
+              : "thin";
+        const borderColor = this.convertColor(border.color) || "windowtext";
+        borderCss += `\n border-${side}:1px solid ${borderColor};`;
+      } else {
+        borderCss += `\n border-${side}:none;`;
+      }
+    }
+
+    return `.x${index}
+ {
+ mso-number-format:"${numFmt}";
+ text-align:${align};
+ vertical-align:${valign};
+ white-space:${wrapText};
+ background:${bgColor};
+ mso-pattern:${msoPattern};
+ color:${fontColor};
+ font-size:${fontSize}pt;
+ font-weight:${fontWeight};
+ font-style:${fontStyle};
+ font-family:${fontFamily},sans-serif;${borderCss}
+ mso-diagonal-down:none;
+ mso-diagonal-up:none;
+ mso-protection:locked visible;
+ }
+`;
+  }
+
+  private convertColor(color: string | undefined): string {
+    if (!color) return "";
+    if (color.startsWith("#")) {
+      return color;
+    }
+    if (/^[0-9A-Fa-f]{8}$/.test(color)) {
+      return "#" + color.substring(2);
+    }
+    if (/^[0-9A-Fa-f]{6}$/.test(color)) {
+      return "#" + color;
+    }
+    if (/^[0-9A-Fa-f]{3}$/.test(color)) {
+      return (
+        "#" + color[0] + color[0] + color[1] + color[1] + color[2] + color[2]
+      );
+    }
+    return "";
+  }
+
+  private escapeCss(str: string): string {
+    return str.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
   }
 
   private generateTabstripHtml(
@@ -491,14 +581,31 @@ ${tableHtml}
     const maxRow = Math.max(...cells.map((c) => c.row));
     const maxCol = Math.max(...cells.map((c) => c.col));
 
-    let colWidths = "";
+    const defaultWidth = 64;
+    const columnWidths: number[] = [];
     for (let col = 0; col <= maxCol; col++) {
-      const width = worksheet.getColumnWidth(col) || 64;
-      colWidths += `<col width='${width}' span='1' style='mso-width-source:userset;width:${width * 0.75}pt'/>`;
+      columnWidths.push(worksheet.getColumnWidth(col) || defaultWidth);
     }
 
-    let tableHtml = `<table border='0' cellpadding='0' cellspacing='0' width='${(maxCol + 1) * 96}' style='border-collapse:collapse;table-layout:fixed;width:${(maxCol + 1) * 96}pt'>
- ${colWidths}
+    let totalWidth = 0;
+    let colWidthsStr = "";
+    let span = 1;
+    for (let col = 0; col <= maxCol; col++) {
+      const width = columnWidths[col];
+      totalWidth += width;
+
+      const nextCol = col + 1;
+      if (nextCol <= maxCol && columnWidths[nextCol] === width) {
+        span++;
+      } else {
+        const ptWidth = width * 0.75;
+        colWidthsStr += `<col width='${width}' span='${span}' style='mso-width-source:userset;width:${ptWidth}pt'/>`;
+        span = 1;
+      }
+    }
+
+    let tableHtml = `<table border='0' cellpadding='0' cellspacing='0' width='${totalWidth}' style='border-collapse:collapse;table-layout:fixed;width:${totalWidth * 0.75}pt'>
+ ${colWidthsStr}
 `;
 
     const usedStyles = new Set<number>();
@@ -518,12 +625,21 @@ ${tableHtml}
 
         const isNumber = typeof rawValue === "number";
         const styleIndex = cell?.styleIndex;
+        const colWidth = columnWidths[col];
 
         let cellAttr = "";
         if (styleIndex !== undefined) {
           cellAttr = `class='x${styleIndex + 1}'`;
         } else if (row === 0) {
           cellAttr = `class='x1'`;
+        }
+
+        if (row === 0) {
+          if (col === 0) {
+            cellAttr += ` height='${rowHeight}' width='${colWidth}' style='height:${rowHeight * 0.75}pt;width:${colWidth * 0.75}pt;'`;
+          } else {
+            cellAttr += ` width='${colWidth}' style='width:${colWidth * 0.75}pt;'`;
+          }
         }
 
         if (isNumber) {
@@ -538,7 +654,7 @@ ${tableHtml}
 
     tableHtml += `<![if supportMisalignedColumns]>
  <tr height='0' style='display:none'>
-  <td width='${(maxCol + 1) * 96}' colspan='${maxCol + 1}' style='width:${(maxCol + 1) * 96}pt;mso-ignore:colspan;'></td>
+  <td width='${totalWidth}' colspan='${maxCol + 1}' style='width:${totalWidth * 0.75}pt;mso-ignore:colspan;'></td>
  </tr>
  <![endif]>
 </table>`;
