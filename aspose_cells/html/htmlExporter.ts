@@ -614,7 +614,7 @@ ${tableHtml}
     });
 
     for (let row = 0; row <= maxRow; row++) {
-      const rowHeight = 16;
+      const rowHeight = worksheet.getRowHeight(row) || 16;
       tableHtml += ` <tr height='${rowHeight}' style='mso-height-source:userset;height:${rowHeight * 0.75}pt'>`;
 
       for (let col = 0; col <= maxCol; col++) {
@@ -630,16 +630,17 @@ ${tableHtml}
         let cellAttr = "";
         if (styleIndex !== undefined) {
           cellAttr = `class='x${styleIndex + 1}'`;
-        } else if (row === 0) {
-          cellAttr = `class='x1'`;
         }
 
-        if (row === 0) {
-          if (col === 0) {
-            cellAttr += ` height='${rowHeight}' width='${colWidth}' style='height:${rowHeight * 0.75}pt;width:${colWidth * 0.75}pt;'`;
+        if (col === 0) {
+          cellAttr += ` height='${rowHeight}'`;
+          if (row === 0) {
+            cellAttr += ` width='${colWidth}' style='height:${rowHeight * 0.75}pt;width:${colWidth * 0.75}pt;'`;
           } else {
-            cellAttr += ` width='${colWidth}' style='width:${colWidth * 0.75}pt;'`;
+            cellAttr += ` style='height:${rowHeight * 0.75}pt;'`;
           }
+        } else if (row === 0) {
+          cellAttr += ` width='${colWidth}' style='width:${colWidth * 0.75}pt;'`;
         }
 
         if (isNumber) {

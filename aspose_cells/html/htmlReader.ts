@@ -41,6 +41,8 @@ export class HtmlReader {
         if (this.pos < this.len && this.html[this.pos] === "/") {
           this.isEndTag = true;
           this.pos++;
+        } else {
+          this.isStartTag = true;
         }
 
         this.readTagName();

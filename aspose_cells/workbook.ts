@@ -294,6 +294,10 @@ export class Workbook {
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       const rowNum = parseInt(row.getAttribute("r") ?? "0", 10) - 1;
+      const rowHeight = row.getAttribute("ht");
+      if (rowHeight) {
+        worksheet.setRowHeight(rowNum, parseFloat(rowHeight));
+      }
       const cells = row.getElementsByTagName("c");
 
       for (let j = 0; j < cells.length; j++) {
@@ -452,35 +456,164 @@ export class Workbook {
   }
 
   private generateWorkbook(): string {
-    let xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="x15" xmlns:x15="http://schemas.microsoft.com/office/spreadsheetml/2010/11/main"><fileVersion appName="xl" lastEdited="4" lowestEdited="4" rupBuild="9302" /><workbookPr /><bookViews><workbookView xWindow="240" yWindow="120" windowWidth="14940" windowHeight="9225" activeTab="0" /></bookViews><sheets>`;
+    let xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="x15 xr xr6 xr10 xr2" xmlns:x15="http://schemas.microsoft.com/office/spreadsheetml/2010/11/main" xmlns:xr="http://schemas.microsoft.com/office/spreadsheetml/2014/revision" xmlns:xr6="http://schemas.microsoft.com/office/spreadsheetml/2016/revision6" xmlns:xr10="http://schemas.microsoft.com/office/spreadsheetml/2016/revision10" xmlns:xr2="http://schemas.microsoft.com/office/spreadsheetml/2015/revision2"><fileVersion appName="xl" lastEdited="7" lowestEdited="4" rupBuild="29725"/><workbookPr/><mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><mc:Choice Requires="x15"><x15ac:absPath url="E:\\FOSS\\aspose.cells-foss-for-typescript\\" xmlns:x15ac="http://schemas.microsoft.com/office/spreadsheetml/2010/11/ac"/></mc:Choice></mc:AlternateContent><xr:revisionPtr revIDLastSave="0" documentId="13_ncr:1_{43418319-D520-46C2-81F6-417174F36FCE}" xr6:coauthVersionLast="47" xr6:coauthVersionMax="47" xr10:uidLastSave="{00000000-0000-0000-0000-000000000000}"/><bookViews><workbookView xWindow="-110" yWindow="-110" windowWidth="25820" windowHeight="15500" activeTab="1" xr2:uid="{00000000-000D-0000-FFFF-FFFF00000000}"/></bookViews><sheets>`;
 
     for (let i = 0; i < this._sheets.worksheets.length; i++) {
       const sheet = this._sheets.worksheets[i];
-      const rid = this._sharedStrings.length > 0 ? 3 : 2;
+      const rid = i + 1;
       xml += `<sheet name="${escapeXml(sheet.name)}" sheetId="${i + 1}" r:id="rId${rid}" />`;
     }
 
-    xml += `</sheets><definedNames /><calcPr fullCalcOnLoad="1" /></workbook>`;
+    xml += `</sheets><calcPr calcId="0"/></workbook>`;
     return xml;
   }
 
   private generateWorkbookRels(): string {
     let xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`;
 
-    if (this._sharedStrings.length > 0) {
-      xml += `<Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml" />`;
+    let rid = 1;
+
+    for (let i = 0; i < this._sheets.worksheets.length; i++) {
+      xml += `<Relationship Id="rId${rid++}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml" />`;
     }
 
-    xml += `<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml" />`;
+    xml += `<Relationship Id="rId${rid++}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml" />`;
 
-    xml += `<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml" />`;
+    if (this._sharedStrings.length > 0) {
+      xml += `<Relationship Id="rId${rid++}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml" />`;
+    }
 
-    xml += `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml" /></Relationships>`;
+    xml += `<Relationship Id="rId${rid++}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml" /></Relationships>`;
     return xml;
   }
 
   private generateStyles(): string {
-    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="1"><font><sz val="10" /><color theme="1" /><name val="Arial" /><family val="2" /></font></fonts><fills count="2"><fill><patternFill patternType="none" /></fill><fill><patternFill patternType="gray125" /></fill></fills><borders count="1"><border><left /><right /><top /><bottom /><diagonal /></border></borders><cellStyleXfs count="6"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"><alignment /><protection /></xf><xf numFmtId="9" fontId="0" fillId="0" borderId="0" applyFont="0" applyFill="0" applyBorder="0" applyAlignment="0" applyProtection="0" /><xf numFmtId="44" fontId="0" fillId="0" borderId="0" applyFont="0" applyFill="0" applyBorder="0" applyAlignment="0" applyProtection="0" /><xf numFmtId="42" fontId="0" fillId="0" borderId="0" applyFont="0" applyFill="0" applyBorder="0" applyAlignment="0" applyProtection="0" /><xf numFmtId="43" fontId="0" fillId="0" borderId="0" applyFont="0" applyFill="0" applyBorder="0" applyAlignment="0" applyProtection="0" /><xf numFmtId="41" fontId="0" fillId="0" borderId="0" applyFont="0" applyFill="0" applyBorder="0" applyAlignment="0" applyProtection="0" /></cellStyleXfs><cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" /></cellXfs><cellStyles count="6"><cellStyle name="Normal" xfId="0" builtinId="0" /><cellStyle name="Percent" xfId="1" builtinId="5" /><cellStyle name="Currency" xfId="2" builtinId="4" /><cellStyle name="Currency [0]" xfId="3" builtinId="7" /><cellStyle name="Comma" xfId="4" builtinId="3" /><cellStyle name="Comma [0]" xfId="5" builtinId="6" /></cellStyles><colors><indexedColors><rgbColor rgb="00000000" /><rgbColor rgb="00FFFFFF" /><rgbColor rgb="00FF0000" /><rgbColor rgb="0000FF00" /><rgbColor rgb="000000FF" /><rgbColor rgb="00FFFF00" /><rgbColor rgb="00FF00FF" /><rgbColor rgb="0000FFFF" /><rgbColor rgb="00000000" /><rgbColor rgb="00FFFFFF" /><rgbColor rgb="00FF0000" /><rgbColor rgb="0000FF00" /><rgbColor rgb="000000FF" /><rgbColor rgb="00FFFF00" /><rgbColor rgb="00FF00FF" /><rgbColor rgb="0000FFFF" /><rgbColor rgb="00800000" /><rgbColor rgb="00008000" /><rgbColor rgb="00000080" /><rgbColor rgb="00808000" /><rgbColor rgb="00800080" /><rgbColor rgb="00008080" /><rgbColor rgb="00C0C0C0" /><rgbColor rgb="00808080" /><rgbColor rgb="009999FF" /><rgbColor rgb="00993366" /><rgbColor rgb="00FFFFCC" /><rgbColor rgb="00CCFFFF" /><rgbColor rgb="00660066" /><rgbColor rgb="00FF8080" /><rgbColor rgb="000066CC" /><rgbColor rgb="00CCCCFF" /><rgbColor rgb="00000080" /><rgbColor rgb="00FF00FF" /><rgbColor rgb="00FFFF00" /><rgbColor rgb="0000FFFF" /><rgbColor rgb="00800080" /><rgbColor rgb="00800000" /><rgbColor rgb="00008080" /><rgbColor rgb="000000FF" /><rgbColor rgb="0000CCFF" /><rgbColor rgb="00CCFFFF" /><rgbColor rgb="00CCFFCC" /><rgbColor rgb="00FFFF99" /><rgbColor rgb="0099CCFF" /><rgbColor rgb="00FF99CC" /><rgbColor rgb="00CC99FF" /><rgbColor rgb="00FFCC99" /><rgbColor rgb="003366FF" /><rgbColor rgb="0033CCCC" /><rgbColor rgb="0099CC00" /><rgbColor rgb="00FFCC00" /><rgbColor rgb="00FF9900" /><rgbColor rgb="00FF6600" /><rgbColor rgb="00666699" /><rgbColor rgb="00969696" /><rgbColor rgb="00003366" /><rgbColor rgb="00339966" /><rgbColor rgb="00003300" /><rgbColor rgb="00333300" /><rgbColor rgb="00993300" /><rgbColor rgb="00993366" /><rgbColor rgb="00333399" /><rgbColor rgb="00333333" /></indexedColors></colors><extLst><ext uri="{EB79DEF2-80B8-43e5-95BD-54CBDDF9020C}" xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main"><x14:slicerStyles defaultSlicerStyle="SlicerStyleLight1" /></ext><ext uri="{9260A510-F301-46a8-8635-F512D64BE5F5}" xmlns:x15="http://schemas.microsoft.com/office/spreadsheetml/2010/11/main"><x15:timelineStyles defaultTimelineStyle="TimeSlicerStyleLight1" /></ext></extLst></styleSheet>`;
+    const styles = this._sheets.styles;
+
+    const fonts = new Map<number, any>();
+    const fills = new Map<number, any>();
+    const borders = new Map<number, any>();
+    const numFmts = new Map<number, string>();
+
+    let fontId = 0;
+    let fillId = 0;
+    let borderId = 0;
+    let numFmtId = 164;
+
+    for (const [idx, style] of styles) {
+      if (style.font) {
+        if (!fonts.has(fontId)) {
+          fonts.set(fontId++, style.font);
+        }
+      }
+      if (style.fill?.patternType && style.fill.patternType !== "none") {
+        if (!fills.has(fillId)) {
+          fills.set(fillId++, style.fill);
+        }
+      }
+      if (style.border) {
+        if (!borders.has(borderId)) {
+          borders.set(borderId++, style.border);
+        }
+      }
+      if (
+        style.numberFormat &&
+        ![
+          "General",
+          "0",
+          "0.00",
+          "#,##0",
+          "#,##0.00",
+          "0%",
+          "0.00%",
+          "0.00E+00",
+        ].includes(style.numberFormat)
+      ) {
+        numFmts.set(numFmtId++, style.numberFormat);
+      }
+    }
+
+    let fontsXml = `<fonts count="${Math.max(1, fonts.size)}">`;
+    fontsXml += `<font><sz val="10" /><color theme="1" /><name val="Arial" /><family val="2" /></font>`;
+    for (const [id, font] of fonts) {
+      const size = font.size || 10;
+      const name = font.name || "Arial";
+      const color = font.color ? ` rgb="${font.color}"` : ' theme="1"';
+      const bold = font.bold ? "<b />" : "";
+      const italic = font.italic ? "<i />" : "";
+      fontsXml += `<font><sz val="${size}" /><color${color} /><name val="${name}" /><family val="2" />${bold}${italic}</font>`;
+    }
+    fontsXml += "</fonts>";
+
+    let fillsXml = `<fills count="${Math.max(2, fills.size + 2)}">`;
+    fillsXml += `<fill><patternFill patternType="none" /></fill>`;
+    fillsXml += `<fill><patternFill patternType="gray125" /></fill>`;
+    for (const [id, fill] of fills) {
+      const fgColor = fill.fgColor ? ` rgb="${fill.fgColor}"` : "";
+      const patternType = fill.patternType || "solid";
+      fillsXml += `<fill><patternFill patternType="${patternType}"><fgColor${fgColor} /></patternFill></fill>`;
+    }
+    fillsXml += "</fills>";
+
+    let bordersXml = `<borders count="${Math.max(1, borders.size + 1)}">`;
+    bordersXml += `<border><left /><right /><top /><bottom /><diagonal /></border>`;
+    for (const [id, border] of borders) {
+      const parseSide = (side: any) => {
+        if (!side?.style) return "<left />";
+        const style =
+          side.style === "thick"
+            ? 'style="thick"'
+            : side.style === "medium"
+              ? 'style="medium"'
+              : 'style="thin"';
+        const color = side.color ? ` rgb="${side.color}"` : ' auto="1"';
+        return `<left ${style}><color${color} /></left>`;
+      };
+      bordersXml += `<border>${parseSide(border.left)}${parseSide(border.right)}${parseSide(border.top)}${parseSide(border.bottom)}<diagonal /></border>`;
+    }
+    bordersXml += "</borders>";
+
+    let numFmtsXml = "";
+    if (numFmts.size > 0) {
+      numFmtsXml = `<numFmts count="${numFmts.size}">`;
+      for (const [id, fmt] of numFmts) {
+        const code = fmt.replace(/\\/g, "\\\\");
+        numFmtsXml += `<numFmt numFmtId="${id}" formatCode="${code}" />`;
+      }
+      numFmtsXml += "</numFmts>";
+    }
+
+    let cellXfsXml = `<cellXfs count="${styles.size || 1}">`;
+    for (const [idx, style] of styles) {
+      const fontRef = style.font ? 1 : 0;
+      const fillRef =
+        style.fill?.patternType && style.fill.patternType !== "none" ? 2 : 0;
+      const borderRef = style.border ? 1 : 0;
+
+      let applyAlignment = "";
+      let alignmentXml = "";
+      if (style.alignment) {
+        const h = style.alignment.horizontal
+          ? ` horizontal="${style.alignment.horizontal}"`
+          : "";
+        const v = style.alignment.vertical
+          ? ` vertical="${style.alignment.vertical}"`
+          : "";
+        const wrap = style.alignment.wrapText ? ' wrapText="1"' : "";
+        if (h || v || wrap) {
+          applyAlignment = ' applyAlignment="1"';
+          alignmentXml = `<alignment${h}${v}${wrap} />`;
+        }
+      }
+
+      cellXfsXml += `<xf numFmtId="0" fontId="${fontRef}" fillId="${fillRef}" borderId="${borderRef}" xfId="0"${applyAlignment}>${alignmentXml}</xf>`;
+    }
+    if (styles.size === 0) {
+      cellXfsXml += `<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" />`;
+    }
+    cellXfsXml += "</cellXfs>";
+
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="x14ac x16r2 xr" xmlns:x14ac="http://schemas.microsoft.com/office/spreadsheetml/2009/9/ac" xmlns:x16r2="http://schemas.microsoft.com/office/spreadsheetml/2015/02/main" xmlns:xr="http://schemas.microsoft.com/office/spreadsheetml/2014/revision">${numFmtsXml}${fontsXml}${fillsXml}${bordersXml}<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>${cellXfsXml}<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles><dxfs count="0"/><tableStyles count="0" defaultTableStyle="TableStyleMedium2" defaultPivotStyle="PivotStyleLight16"/><extLst><ext uri="{EB79DEF2-80B8-43e5-95BD-54CBDDF9020C}" xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main"><x14:slicerStyles defaultSlicerStyle="SlicerStyleLight1"/></ext><ext uri="{9260A510-F301-46a8-8635-F512D64BE5F5}" xmlns:x15="http://schemas.microsoft.com/office/spreadsheetml/2010/11/main"><x15:timelineStyles defaultTimelineStyle="TimeSlicerStyleLight1"/></ext></extLst></styleSheet>`;
   }
 
   private generateSharedStrings(): string {
