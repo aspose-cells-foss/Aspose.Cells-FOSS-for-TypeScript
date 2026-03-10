@@ -6,6 +6,7 @@ import type {
   Comment,
   Hyperlink,
   ConditionalFormatRule,
+  ShapeInfo,
 } from "./types";
 import { cellRef, parseCellRef, parseRange } from "./util";
 
@@ -29,6 +30,7 @@ export class Worksheet {
   private _mergedCells: string[] = [];
   private _columnWidths: Map<number, number> = new Map();
   private _rowHeights: Map<number, number> = new Map();
+  private _shapes: ShapeInfo[] = [];
 
   constructor(name: string, index: number) {
     this._name = name;
@@ -166,6 +168,14 @@ export class Worksheet {
     if (cell) {
       cell.setStyle(style);
     }
+  }
+
+  addShape(shape: ShapeInfo) {
+    this._shapes.push(shape);
+  }
+
+  get shapes(): ShapeInfo[] {
+    return this._shapes;
   }
 
   toXml(): string {

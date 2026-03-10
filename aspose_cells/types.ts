@@ -185,3 +185,23 @@ export enum SaveFormat {
 export enum EncryptionType {
   AES = "aes",
 }
+
+export interface ShapeInfo {
+  name: string;
+  type: string; // 'line','rect','ellipse','triangle','straightConnector1','bentConnector3', etc.
+  fromCol: number;
+  fromColOff: number; // EMU
+  fromRow: number;
+  fromRowOff: number; // EMU
+  toCol: number;
+  toColOff: number;
+  toRow: number;
+  toRowOff: number;
+  fillColor?: string; // resolved hex color
+  lineColor?: string;
+  lineWidth?: number; // EMU
+  flipV?: boolean;
+  flipH?: boolean;
+  hasArrowEnd?: boolean;
+  isConnector?: boolean;
+}
