@@ -1,7 +1,15 @@
 import { HtmlReader } from "./htmlReader";
 import { Worksheet } from "../worksheet";
 import { cellRef } from "../util";
-import type { CellValue } from "../types";
+import type {
+  CellValue,
+  Style,
+  Font,
+  Fill,
+  Border,
+  BorderLine,
+  Alignment,
+} from "../types";
 import type { HtmlParseOptions } from "./htmlDocument";
 
 export interface HtmlSaveOptions {
@@ -9,13 +17,41 @@ export interface HtmlSaveOptions {
   borderCollapse?: boolean;
 }
 
+export interface CellStyle {
+  align?: string;
+  valign?: string;
+  bgcolor?: string;
+  color?: string;
+  font?: {
+    name?: string;
+    size?: number;
+    bold?: boolean;
+    italic?: boolean;
+  };
+  border?: {
+    left?: { style?: string; color?: string };
+    right?: { style?: string; color?: string };
+    top?: { style?: string; color?: string };
+    bottom?: { style?: string; color?: string };
+  };
+}
+
 export class HtmlTable {
   private _caption?: string;
   private _headers: string[] = [];
   private _rows: string[][] = [];
+  private _colWidths: number[] = [];
+  private _rowHeights: number[] = [];
+  private _cellStyles: Map<string, CellStyle> = new Map();
+  private _cssClasses: Map<string, CellStyle> = new Map();
+  private _cellClasses: Map<string, string> = new Map();
 
   constructor(caption?: string) {
     this._caption = caption;
+  }
+
+  setCssClasses(classes: Map<string, CellStyle>) {
+    this._cssClasses = classes;
   }
 
   get caption(): string | undefined {
@@ -30,6 +66,18 @@ export class HtmlTable {
     return this._rows;
   }
 
+  get colWidths(): number[] {
+    return this._colWidths;
+  }
+
+  get rowHeights(): number[] {
+    return this._rowHeights;
+  }
+
+  getCellStyle(row: number, col: number): CellStyle | undefined {
+    return this._cellStyles.get(`${row},${col}`);
+  }
+
   addHeader(header: string): void {
     this._headers.push(header);
   }
@@ -38,13 +86,16 @@ export class HtmlTable {
     this._rows.push(row);
   }
 
-  static parseAll(html: string): HtmlTable[] {
+  static parseAll(
+    html: string,
+    cssClasses?: Map<string, CellStyle>,
+  ): HtmlTable[] {
     const tables: HtmlTable[] = [];
     const tableRegex = /<table[^>]*>([\s\S]*?)<\/table>/gi;
     let match;
 
     while ((match = tableRegex.exec(html)) !== null) {
-      const table = HtmlTable.parse(match[1]);
+      const table = HtmlTable.parse(match[1], cssClasses);
       tables.push(table);
     }
 
@@ -57,6 +108,10 @@ export class HtmlTable {
       useFirstRowAsHeader: false,
       ...options,
     };
+
+    for (let col = 0; col < this._colWidths.length; col++) {
+      worksheet.setColumnWidth(col, this._colWidths[col]);
+    }
 
     let startRow = 0;
 
@@ -71,11 +126,66 @@ export class HtmlTable {
     }
 
     for (let row = 0; row < this._rows.length; row++) {
+      if (row < this._rowHeights.length) {
+        worksheet.setRowHeight(row + startRow, this._rowHeights[row]);
+      }
+
       const dataRow = this._rows[row];
       for (let col = 0; col < dataRow.length; col++) {
-        const value = opts.trimWhitespace ? dataRow[col].trim() : dataRow[col];
-        const cellValue = HtmlTable.parseValue(value);
-        worksheet.putValue(cellRef(row + startRow, col), cellValue);
+        const rawValue = opts.trimWhitespace
+          ? dataRow[col].trim()
+          : dataRow[col];
+        const cellValue = HtmlTable.parseValue(rawValue);
+        const cellStyle = this.getCellStyle(row, col);
+
+        // Write the cell only if it has a non‑null value or a style applied
+        if (cellValue !== null || cellStyle) {
+          const cellRefStr = cellRef(row + startRow, col);
+          worksheet.putValue(cellRefStr, cellValue);
+        }
+
+        if (cellStyle) {
+          const style: any = {};
+
+          if (cellStyle.align || cellStyle.valign) {
+            style.alignment = {};
+            if (cellStyle.align) style.alignment.horizontal = cellStyle.align;
+            if (cellStyle.valign) style.alignment.vertical = cellStyle.valign;
+          }
+
+          if (cellStyle.bgcolor) {
+            style.fill = {
+              patternType: "solid",
+              fgColor: cellStyle.bgcolor,
+            };
+          }
+
+          if (
+            cellStyle.font?.bold ||
+            cellStyle.font?.italic ||
+            cellStyle.color
+          ) {
+            style.font = {};
+            if (cellStyle.font?.bold) style.font.bold = true;
+            if (cellStyle.font?.italic) style.font.italic = true;
+            if (cellStyle.color) style.font.color = cellStyle.color;
+          }
+
+          if (cellStyle.border) {
+            style.border = {};
+            if (cellStyle.border.left)
+              style.border.left = cellStyle.border.left;
+            if (cellStyle.border.right)
+              style.border.right = cellStyle.border.right;
+            if (cellStyle.border.top) style.border.top = cellStyle.border.top;
+            if (cellStyle.border.bottom)
+              style.border.bottom = cellStyle.border.bottom;
+          }
+
+          if (Object.keys(style).length > 0) {
+            worksheet.setCellStyle(cellRef(row + startRow, col), style);
+          }
+        }
       }
     }
   }
@@ -103,8 +213,11 @@ export class HtmlTable {
     return value;
   }
 
-  static parse(html: string): HtmlTable {
+  static parse(html: string, cssClasses?: Map<string, CellStyle>): HtmlTable {
     const table = new HtmlTable();
+    if (cssClasses) {
+      table._cssClasses = cssClasses;
+    }
     const reader = new HtmlReader(html);
 
     let inThead = false;
@@ -116,6 +229,57 @@ export class HtmlTable {
     let currentRow: string[] = [];
     let currentCell = "";
     let captionText = "";
+    let currentRowIndex = 0;
+    let currentColIndex = 0;
+    // Flag to skip rows that are hidden via CSS (display:none)
+    let skipCurrentRow = false;
+
+    const parseStyle = (styleStr: string): CellStyle => {
+      const style: CellStyle = {};
+      if (!styleStr) return style;
+
+      const parts = styleStr.split(";");
+      for (const part of parts) {
+        const [key, ...valueParts] = part.split(":");
+        if (!key || valueParts.length === 0) continue;
+        const value = valueParts.join(":").trim();
+
+        if (key.trim() === "background-color" || key.trim() === "background") {
+          style.bgcolor = value;
+        } else if (key.trim() === "color") {
+          style.color = value;
+        } else if (key.trim() === "font-weight" && value === "bold") {
+          style.font = { ...style.font, bold: true };
+        } else if (key.trim() === "font-style" && value === "italic") {
+          style.font = { ...style.font, italic: true };
+        } else if (key.trim() === "text-align") {
+          style.align = value;
+        } else if (key.trim() === "vertical-align") {
+          style.valign = value;
+        } else if (key.trim() === "border-left") {
+          style.border = {
+            ...style.border,
+            left: HtmlTable.parseBorderSide(value),
+          };
+        } else if (key.trim() === "border-right") {
+          style.border = {
+            ...style.border,
+            right: HtmlTable.parseBorderSide(value),
+          };
+        } else if (key.trim() === "border-top") {
+          style.border = {
+            ...style.border,
+            top: HtmlTable.parseBorderSide(value),
+          };
+        } else if (key.trim() === "border-bottom") {
+          style.border = {
+            ...style.border,
+            bottom: HtmlTable.parseBorderSide(value),
+          };
+        }
+      }
+      return style;
+    };
 
     while (reader.read()) {
       const tag = reader.tagName;
@@ -146,38 +310,96 @@ export class HtmlTable {
         inTbody = false;
       }
 
-      if (tag === "tr" && isStart) {
-        inTr = true;
-        currentRow = [];
-      } else if (tag === "tr" && isEnd && inTr) {
-        inTr = false;
-        if (inThead && currentRow.length > 0) {
-          table._headers = currentRow;
-        } else if (currentRow.length > 0) {
-          table._rows.push(currentRow);
+      if (tag === "col" && isStart) {
+        const width = reader.getAttribute("width");
+        const span = reader.getAttribute("span");
+        const style = reader.getAttribute("style") || "";
+        let colWidth = width ? parseFloat(width) : 64;
+        const styleWidthMatch = style.match(/width:\s*(\d+(?:\.\d+)?)(pt|px)/);
+        if (styleWidthMatch) {
+          colWidth = parseFloat(styleWidthMatch[1]);
+          if (styleWidthMatch[2] === "pt") {
+            colWidth = Math.round(colWidth * 4 / 3); // pt to px at 96dpi
+          }
+        }
+        const spanCount = span ? parseInt(span, 10) : 1;
+        for (let i = 0; i < spanCount; i++) {
+          table._colWidths.push(colWidth);
         }
       }
 
-      if (tag === "th" && isStart) {
-        if (inTr) {
-          if (inThead) {
-            inTh = true;
-          } else {
-            inTd = true;
+      if (tag === "tr" && isStart) {
+        inTr = true;
+        currentRow = [];
+        currentColIndex = 0;
+        const height = reader.getAttribute("height");
+        const style = reader.getAttribute("style") || "";
+        // Detect hidden rows via display:none and skip processing them
+        skipCurrentRow = /display\s*:\s*none/i.test(style);
+        let rowHeight = height ? parseFloat(height) : 16;
+        const styleHeightMatch = style.match(
+          /height:\s*(\d+(?:\.\d+)?)(pt|px)/,
+        );
+        if (styleHeightMatch) {
+          rowHeight = parseFloat(styleHeightMatch[1]);
+          if (styleHeightMatch[2] === "pt") {
+            rowHeight = rowHeight * 1.33;
           }
         }
-        currentCell = "";
-      } else if (tag === "th" && isEnd && inTh) {
-        inTh = false;
-        if (inTr) {
-          currentRow.push(HtmlTable.extractText(currentCell));
+        if (!skipCurrentRow) {
+          table._rowHeights.push(rowHeight);
         }
-      } else if (tag === "td" && isStart) {
-        if (inTr) {
-          inTd = true;
+      } else if (tag === "tr" && isEnd && inTr) {
+        inTr = false;
+        currentRowIndex++;
+        if (!skipCurrentRow) {
+          if (inThead && currentRow.length > 0) {
+            table._headers = currentRow;
+          } else if (currentRow.length > 0) {
+            table._rows.push(currentRow);
+          }
         }
-        currentCell = "";
-      } else if (tag === "td" && isEnd && inTd) {
+      }
+
+      if ((tag === "th" || tag === "td") && isStart) {
+        if (inTr) {
+          // Skip processing cells in hidden rows
+          if (!skipCurrentRow) {
+            inTd = true;
+            currentCell = "";
+
+            const styleStr = reader.getAttribute("style") || "";
+            const align = reader.getAttribute("align");
+            const valign = reader.getAttribute("valign");
+            const bgcolor = reader.getAttribute("bgcolor");
+            const cssClass = reader.getAttribute("class");
+
+            let cellStyle: CellStyle = parseStyle(styleStr);
+
+            if (cssClass && table._cssClasses.has(cssClass)) {
+              const cssStyle = table._cssClasses.get(cssClass)!;
+              cellStyle = { ...cssStyle, ...cellStyle };
+            }
+
+            if (align) cellStyle.align = align;
+            if (valign) cellStyle.valign = valign;
+            if (bgcolor) cellStyle.bgcolor = bgcolor;
+
+            // Record style only for visible rows
+            if (Object.keys(cellStyle).length > 0) {
+              table._cellStyles.set(
+                `${table._rows.length},${currentColIndex}`,
+                cellStyle,
+              );
+            }
+          } else {
+            // Still need to advance column index for hidden rows
+            inTd = true;
+            currentCell = "";
+          }
+        }
+        currentColIndex++;
+      } else if ((tag === "th" || tag === "td") && isEnd && inTd) {
         inTd = false;
         if (inTr) {
           currentRow.push(HtmlTable.extractText(currentCell));
@@ -190,6 +412,22 @@ export class HtmlTable {
     }
 
     return table;
+  }
+
+  private static parseBorderSide(value: string): {
+    style?: string;
+    color?: string;
+  } {
+    const result: { style?: string; color?: string } = {};
+    const parts = value.split(" ");
+    for (const part of parts) {
+      if (part === "solid" || part === "dashed" || part === "dotted") {
+        result.style = part;
+      } else if (part.startsWith("#") || part.startsWith("rgb")) {
+        result.color = part;
+      }
+    }
+    return result;
   }
 
   private static extractText(html: string): string {

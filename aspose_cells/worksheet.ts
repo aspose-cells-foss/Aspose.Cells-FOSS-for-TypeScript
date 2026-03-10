@@ -161,11 +161,20 @@ export class Worksheet {
     return this._rowHeights.get(row);
   }
 
+  setCellStyle(cellRef: string, style: any) {
+    const cell = this.getCellByRef(cellRef);
+    if (cell) {
+      cell.setStyle(style);
+    }
+  }
+
   toXml(): string {
     const cols: string[] = [];
     for (const [col, width] of this._columnWidths) {
+      // Convert from stored pixel width to Excel character width
+      const excelWidth = Math.round((width / 7) * 100) / 100;
       cols.push(
-        `<col min="${col + 1}" max="${col + 1}" width="${width}" customWidth="1"/>`,
+        `<col min="${col + 1}" max="${col + 1}" width="${excelWidth}" customWidth="1"/>`,
       );
     }
 
@@ -202,24 +211,25 @@ export class Worksheet {
       autoFilter = `<autoFilter ref="${cellRef(startRow, startCol)}:${cellRef(endRow, endCol)}"/>`;
     }
 
-    const colsStr = cols.length > 0 ? "<cols>" + cols.join("") + "</cols>" : "";
+    const colsStr =
+      this._columnWidths.size > 0 ? "<cols>" + cols.join("") + "</cols>" : "";
 
-    const xmlnsAttrs = `xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="x14ac xr xr2 xr3" xmlns:x14ac="http://schemas.microsoft.com/office/spreadsheetml/2009/9/ac" xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main" xmlns:xr="http://schemas.microsoft.com/office/spreadsheetml/2014/revision" xmlns:xr2="http://schemas.microsoft.com/office/spreadsheetml/2015/revision2" xmlns:xr3="http://schemas.microsoft.com/office/spreadsheetml/2016/revision3" xr:uid="{CA87E96B-18A1-4CCB-99B8-D994280CBAA2}"`;
-    const sheetViews = `<sheetViews><sheetView tabSelected="1" workbookViewId="0" topLeftCell="A1" /></sheetViews>`;
-    const sheetFormatPr = `<sheetFormatPr defaultRowHeight="12.75" />`;
+    const xmlnsAttrs = `xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="x14ac xr xr2 xr3" xmlns:x14ac="http://schemas.microsoft.com/office/spreadsheetml/2009/9/ac" xmlns:xr="http://schemas.microsoft.com/office/spreadsheetml/2014/revision" xmlns:xr2="http://schemas.microsoft.com/office/spreadsheetml/2015/revision2" xmlns:xr3="http://schemas.microsoft.com/office/spreadsheetml/2016/revision3" xr:uid="{CA87E96B-18A1-4CCB-99B8-D994280CBAA2}"`;
+    const sheetViews = `<sheetViews><sheetView workbookViewId="0"/></sheetViews>`;
+    const sheetFormatPr = `<sheetFormatPr defaultRowHeight="12.5" x14ac:dyDescent="0.25"/>`;
     let sheetDataWithAttrs = "";
     for (const [rowNum, rowCells] of rows) {
-      const height = this._rowHeights.get(rowNum);
-      const ht = height !== undefined ? height : 12.75;
       const span = `${minCol + 1}:${maxCol + 1}`;
-      sheetDataWithAttrs += `<row r="${rowNum + 1}" spans="${span}" ht="${ht}">`;
+      const rowHeight = this._rowHeights.get(rowNum);
+      const heightAttr = rowHeight ? ` ht="${rowHeight}" customHeight="1"` : "";
+      sheetDataWithAttrs += `<row r="${rowNum + 1}" spans="${span}" x14ac:dyDescent="0.25"${heightAttr}>`;
       const sortedCells = rowCells.sort((a, b) => a.col - b.col);
       for (const cell of sortedCells) {
         sheetDataWithAttrs += cell.toXml();
       }
       sheetDataWithAttrs += "</row>";
     }
-    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet ${xmlnsAttrs}><dimension ${dimension}/>${sheetViews}${sheetFormatPr}${colsStr}<sheetData>${sheetDataWithAttrs}</sheetData>${autoFilter}<pageMargins left="0.75" right="0.75" top="1" bottom="1" header="0.5" footer="0.5" /></worksheet>`;
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet ${xmlnsAttrs}><dimension ${dimension}/>${sheetViews}${sheetFormatPr}${colsStr}<sheetData>${sheetDataWithAttrs}</sheetData>${autoFilter}<pageMargins left="0.75" right="0.75" top="1" bottom="1" header="0.5" footer="0.5"/></worksheet>`;
   }
 
   getXml(): string {

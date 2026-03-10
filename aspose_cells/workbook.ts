@@ -12,6 +12,7 @@ import {
   createZipWriter,
   addZipEntry,
   finalizeZip,
+  fixZipFile,
 } from "./util";
 import { writeFile, mkdir } from "fs/promises";
 import { existsSync } from "fs";
@@ -281,7 +282,7 @@ export class Workbook {
         const max = parseInt(col.getAttribute("max") ?? "1", 10);
         const width = parseFloat(col.getAttribute("width") ?? "8.43");
 
-        const htmlWidth = Math.round(width * 8);
+        const htmlWidth = Math.round(width * 7);
 
         for (let c = min; c < max; c++) {
           worksheet.setColumnWidth(c, htmlWidth);
@@ -377,7 +378,8 @@ export class Workbook {
     const zip = await createZipWriter();
     await this.writeToZip(zip, options);
     const data = await finalizeZip(zip);
-    await writeFile(filePath, Buffer.from(data));
+    const fixedData = fixZipFile(data);
+    await writeFile(filePath, Buffer.from(fixedData));
   }
 
   private detectFormat(filePath: string): SaveFormat {
@@ -398,6 +400,7 @@ export class Workbook {
     options?: { password?: string; saveFormat?: SaveFormat },
   ) {
     this.generateSharedStrings();
+    this.collectCellStyles();
 
     await addZipEntry(zip, "[Content_Types].xml", this.generateContentTypes());
     await addZipEntry(zip, "_rels/.rels", this.generateRels());
@@ -431,7 +434,12 @@ export class Workbook {
     return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title /><dc:subject /><dc:creator /><cp:keywords /><dc:description /><cp:lastModifiedBy /><cp:category /></cp:coreProperties>`;
   }
   private generateApp(): string {
-    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><Application>Microsoft Excel</Application><AppVersion>14.0300</AppVersion><DocSecurity>0</DocSecurity><HeadingPairs><vt:vector size="2" baseType="variant"><vt:variant><vt:lpstr>Worksheets</vt:lpstr></vt:variant><vt:variant><vt:i4>1</vt:i4></vt:variant></vt:vector></HeadingPairs><TitlesOfParts><vt:vector size="1" baseType="lpstr"><vt:lpstr>Sheet1</vt:lpstr></vt:vector></TitlesOfParts><Template /><Manager /><Company /></Properties>`;
+    const sheetCount = this._sheets.worksheets.length;
+    let sheetNames = "";
+    for (const sheet of this._sheets.worksheets) {
+      sheetNames += `<vt:lpstr>${escapeXml(sheet.name)}</vt:lpstr>`;
+    }
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><Template/><Application>Microsoft Excel</Application><DocSecurity>0</DocSecurity><ScaleCrop>false</ScaleCrop><HeadingPairs><vt:vector size="2" baseType="variant"><vt:variant><vt:lpstr>Worksheets</vt:lpstr></vt:variant><vt:variant><vt:i4>${sheetCount}</vt:i4></vt:variant></vt:vector></HeadingPairs><TitlesOfParts><vt:vector size="${sheetCount}" baseType="lpstr">${sheetNames}</vt:vector></TitlesOfParts><Manager/><Company/><LinksUpToDate>false</LinksUpToDate><SharedDoc>false</SharedDoc><HyperlinksChanged>false</HyperlinksChanged><AppVersion>16.0300</AppVersion></Properties>`;
   }
 
   private generateTheme(): string {
@@ -487,129 +495,271 @@ export class Workbook {
     return xml;
   }
 
+  private collectCellStyles() {
+    const styleMap = new Map<string, number>();
+    let nextStyleIndex = 1;
+
+    for (const sheet of this._sheets.worksheets) {
+      for (const cell of sheet.cells) {
+        const cellStyle = cell.style;
+        if (cellStyle) {
+          const styleKey = JSON.stringify(cellStyle);
+          let styleIndex = styleMap.get(styleKey);
+          if (styleIndex === undefined) {
+            styleIndex = nextStyleIndex++;
+            styleMap.set(styleKey, styleIndex);
+            this._sheets.setStyle(styleIndex, cellStyle);
+          }
+          cell.setStyleIndex(styleIndex);
+        }
+      }
+    }
+  }
+
+  private normalizeColor(color: string | undefined): string | undefined {
+    if (!color) return undefined;
+    // Convert CSS #RRGGBB to ARGB FFRRGGBB
+    if (color.startsWith("#")) {
+      return "FF" + color.substring(1).toUpperCase();
+    }
+    // Already in ARGB format (8 hex digits)
+    if (/^[0-9A-Fa-f]{8}$/.test(color)) return color.toUpperCase();
+    return color;
+  }
+
   private generateStyles(): string {
     const styles = this._sheets.styles;
 
-    const fonts = new Map<number, any>();
-    const fills = new Map<number, any>();
-    const borders = new Map<number, any>();
-    const numFmts = new Map<number, string>();
+    // Collect unique fonts (index 0 = default)
+    const fontEntries: any[] = [
+      { name: "Arial", size: 10, bold: false, italic: false },
+    ];
+    const fontKeyMap = new Map<string, number>();
 
-    let fontId = 0;
-    let fillId = 0;
-    let borderId = 0;
-    let numFmtId = 164;
+    // Collect unique fills (index 0 = none, index 1 = gray125)
+    const fillEntries: any[] = [
+      { patternType: "none" },
+      { patternType: "gray125" },
+    ];
+    const fillKeyMap = new Map<string, number>();
 
-    for (const [idx, style] of styles) {
+    // Collect unique borders (index 0 = empty)
+    const borderEntries: any[] = [null];
+    const borderKeyMap = new Map<string, number>();
+
+    // Collect unique number formats
+    const numFmtEntries: { id: number; code: string }[] = [];
+    const numFmtKeyMap = new Map<string, number>();
+    let nextNumFmtId = 164;
+    const builtinFmts = [
+      "General",
+      "0",
+      "0.00",
+      "#,##0",
+      "#,##0.00",
+      "0%",
+      "0.00%",
+      "0.00E+00",
+    ];
+
+    // Build cellXfEntries indexed by Map key so that cell s="N" matches
+    // position N in the cellXfs array. Fill gaps with default entries.
+    type XfEntry = {
+      fontId: number;
+      fillId: number;
+      borderId: number;
+      numFmtId: number;
+      style: Style;
+    };
+
+    const maxStyleIdx =
+      styles.size > 0 ? Math.max(...styles.keys()) : 0;
+    const cellXfEntries: XfEntry[] = [];
+
+    for (let idx = 0; idx <= maxStyleIdx; idx++) {
+      const style = styles.get(idx);
+      if (!style) {
+        // Default "Normal" entry for gaps / index 0
+        cellXfEntries.push({
+          fontId: 0,
+          fillId: 0,
+          borderId: 0,
+          numFmtId: 0,
+          style: {} as Style,
+        });
+        continue;
+      }
+
+      let fontId = 0;
       if (style.font) {
-        if (!fonts.has(fontId)) {
-          fonts.set(fontId++, style.font);
+        const fontKey = JSON.stringify({
+          name: style.font.name,
+          size: style.font.size,
+          color: this.normalizeColor(style.font.color),
+          bold: !!style.font.bold,
+          italic: !!style.font.italic,
+        });
+        if (fontKeyMap.has(fontKey)) {
+          fontId = fontKeyMap.get(fontKey)!;
+        } else {
+          fontId = fontEntries.length;
+          fontKeyMap.set(fontKey, fontId);
+          fontEntries.push({
+            ...style.font,
+            color: this.normalizeColor(style.font.color),
+          });
         }
       }
+
+      let fillId = 0;
       if (style.fill?.patternType && style.fill.patternType !== "none") {
-        if (!fills.has(fillId)) {
-          fills.set(fillId++, style.fill);
+        const fillKey = JSON.stringify({
+          patternType: style.fill.patternType,
+          fgColor: this.normalizeColor(style.fill.fgColor),
+          bgColor: this.normalizeColor(style.fill.bgColor),
+        });
+        if (fillKeyMap.has(fillKey)) {
+          fillId = fillKeyMap.get(fillKey)!;
+        } else {
+          fillId = fillEntries.length;
+          fillKeyMap.set(fillKey, fillId);
+          fillEntries.push({
+            ...style.fill,
+            fgColor: this.normalizeColor(style.fill.fgColor),
+            bgColor: this.normalizeColor(style.fill.bgColor),
+          });
         }
       }
+
+      let borderId = 0;
       if (style.border) {
-        if (!borders.has(borderId)) {
-          borders.set(borderId++, style.border);
+        const borderKey = JSON.stringify(style.border);
+        if (borderKeyMap.has(borderKey)) {
+          borderId = borderKeyMap.get(borderKey)!;
+        } else {
+          borderId = borderEntries.length;
+          borderKeyMap.set(borderKey, borderId);
+          borderEntries.push(style.border);
         }
       }
-      if (
-        style.numberFormat &&
-        ![
-          "General",
-          "0",
-          "0.00",
-          "#,##0",
-          "#,##0.00",
-          "0%",
-          "0.00%",
-          "0.00E+00",
-        ].includes(style.numberFormat)
-      ) {
-        numFmts.set(numFmtId++, style.numberFormat);
+
+      let numFmtId = 0;
+      if (style.numberFormat && !builtinFmts.includes(style.numberFormat)) {
+        if (numFmtKeyMap.has(style.numberFormat)) {
+          numFmtId = numFmtKeyMap.get(style.numberFormat)!;
+        } else {
+          numFmtId = nextNumFmtId++;
+          numFmtKeyMap.set(style.numberFormat, numFmtId);
+          numFmtEntries.push({ id: numFmtId, code: style.numberFormat });
+        }
       }
+
+      cellXfEntries.push({ fontId, fillId, borderId, numFmtId, style });
     }
 
-    let fontsXml = `<fonts count="${Math.max(1, fonts.size)}">`;
-    fontsXml += `<font><sz val="10" /><color theme="1" /><name val="Arial" /><family val="2" /></font>`;
-    for (const [id, font] of fonts) {
+    // --- Generate fonts XML ---
+    let fontsXml = `<fonts count="${fontEntries.length}">`;
+    for (const font of fontEntries) {
       const size = font.size || 10;
       const name = font.name || "Arial";
-      const color = font.color ? ` rgb="${font.color}"` : ' theme="1"';
-      const bold = font.bold ? "<b />" : "";
-      const italic = font.italic ? "<i />" : "";
-      fontsXml += `<font><sz val="${size}" /><color${color} /><name val="${name}" /><family val="2" />${bold}${italic}</font>`;
+      const bold = font.bold ? "<b/>" : "";
+      const italic = font.italic ? "<i/>" : "";
+      let colorAttr: string;
+      if (font.color) {
+        colorAttr = ` rgb="${font.color}"`;
+      } else {
+        colorAttr = ' theme="1"';
+      }
+      fontsXml += `<font>${bold}${italic}<sz val="${size}"/><color${colorAttr}/><name val="${name}"/><family val="2"/></font>`;
     }
     fontsXml += "</fonts>";
 
-    let fillsXml = `<fills count="${Math.max(2, fills.size + 2)}">`;
-    fillsXml += `<fill><patternFill patternType="none" /></fill>`;
-    fillsXml += `<fill><patternFill patternType="gray125" /></fill>`;
-    for (const [id, fill] of fills) {
-      const fgColor = fill.fgColor ? ` rgb="${fill.fgColor}"` : "";
-      const patternType = fill.patternType || "solid";
-      fillsXml += `<fill><patternFill patternType="${patternType}"><fgColor${fgColor} /></patternFill></fill>`;
+    // --- Generate fills XML ---
+    let fillsXml = `<fills count="${fillEntries.length}">`;
+    for (const fill of fillEntries) {
+      if (fill.patternType === "none") {
+        fillsXml += `<fill><patternFill patternType="none"/></fill>`;
+      } else if (fill.patternType === "gray125") {
+        fillsXml += `<fill><patternFill patternType="gray125"/></fill>`;
+      } else {
+        const fgColor = fill.fgColor
+          ? `<fgColor rgb="${fill.fgColor}"/>`
+          : "";
+        const bgColor = fill.bgColor
+          ? `<bgColor rgb="${fill.bgColor}"/>`
+          : '<bgColor indexed="64"/>';
+        fillsXml += `<fill><patternFill patternType="${fill.patternType || "solid"}">${fgColor}${bgColor}</patternFill></fill>`;
+      }
     }
     fillsXml += "</fills>";
 
-    let bordersXml = `<borders count="${Math.max(1, borders.size + 1)}">`;
-    bordersXml += `<border><left /><right /><top /><bottom /><diagonal /></border>`;
-    for (const [id, border] of borders) {
-      const parseSide = (side: any) => {
-        if (!side?.style) return "<left />";
-        const style =
-          side.style === "thick"
-            ? 'style="thick"'
+    // --- Generate borders XML (fix: use correct tag name per side) ---
+    let bordersXml = `<borders count="${borderEntries.length}">`;
+    bordersXml += `<border><left/><right/><top/><bottom/><diagonal/></border>`;
+    for (let i = 1; i < borderEntries.length; i++) {
+      const border = borderEntries[i];
+      const renderSide = (tagName: string, side: any): string => {
+        if (!side?.style) return `<${tagName}/>`;
+        // Map CSS border styles to valid OOXML border styles
+        const xlStyle =
+          side.style === "solid" || side.style === "thin"
+            ? "thin"
             : side.style === "medium"
-              ? 'style="medium"'
-              : 'style="thin"';
-        const color = side.color ? ` rgb="${side.color}"` : ' auto="1"';
-        return `<left ${style}><color${color} /></left>`;
+              ? "medium"
+              : side.style === "thick"
+                ? "thick"
+                : side.style === "dashed"
+                  ? "dashed"
+                  : side.style === "dotted"
+                    ? "dotted"
+                    : "thin";
+        const color = side.color
+          ? ` rgb="${this.normalizeColor(side.color)}"`
+          : ' auto="1"';
+        return `<${tagName} style="${xlStyle}"><color${color}/></${tagName}>`;
       };
-      bordersXml += `<border>${parseSide(border.left)}${parseSide(border.right)}${parseSide(border.top)}${parseSide(border.bottom)}<diagonal /></border>`;
+      bordersXml += `<border>${renderSide("left", border.left)}${renderSide("right", border.right)}${renderSide("top", border.top)}${renderSide("bottom", border.bottom)}<diagonal/></border>`;
     }
     bordersXml += "</borders>";
 
+    // --- Generate numFmts XML ---
     let numFmtsXml = "";
-    if (numFmts.size > 0) {
-      numFmtsXml = `<numFmts count="${numFmts.size}">`;
-      for (const [id, fmt] of numFmts) {
-        const code = fmt.replace(/\\/g, "\\\\");
-        numFmtsXml += `<numFmt numFmtId="${id}" formatCode="${code}" />`;
+    if (numFmtEntries.length > 0) {
+      numFmtsXml = `<numFmts count="${numFmtEntries.length}">`;
+      for (const nf of numFmtEntries) {
+        numFmtsXml += `<numFmt numFmtId="${nf.id}" formatCode="${escapeXml(nf.code)}"/>`;
       }
       numFmtsXml += "</numFmts>";
     }
 
-    let cellXfsXml = `<cellXfs count="${styles.size || 1}">`;
-    for (const [idx, style] of styles) {
-      const fontRef = style.font ? 1 : 0;
-      const fillRef =
-        style.fill?.patternType && style.fill.patternType !== "none" ? 2 : 0;
-      const borderRef = style.border ? 1 : 0;
+    // --- Generate cellXfs XML ---
+    let cellXfsXml = `<cellXfs count="${cellXfEntries.length || 1}">`;
+    if (cellXfEntries.length === 0) {
+      cellXfsXml += `<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>`;
+    }
+    for (const xf of cellXfEntries) {
+      const applyFont = xf.fontId !== 0 ? ' applyFont="1"' : "";
+      const applyFill = xf.fillId !== 0 ? ' applyFill="1"' : "";
+      const applyBorder = xf.borderId !== 0 ? ' applyBorder="1"' : "";
+      const applyNumFmt = xf.numFmtId !== 0 ? ' applyNumberFormat="1"' : "";
 
       let applyAlignment = "";
       let alignmentXml = "";
-      if (style.alignment) {
-        const h = style.alignment.horizontal
-          ? ` horizontal="${style.alignment.horizontal}"`
+      if (xf.style.alignment) {
+        const h = xf.style.alignment.horizontal
+          ? ` horizontal="${xf.style.alignment.horizontal}"`
           : "";
-        const v = style.alignment.vertical
-          ? ` vertical="${style.alignment.vertical}"`
+        const v = xf.style.alignment.vertical
+          ? ` vertical="${xf.style.alignment.vertical}"`
           : "";
-        const wrap = style.alignment.wrapText ? ' wrapText="1"' : "";
+        const wrap = xf.style.alignment.wrapText ? ' wrapText="1"' : "";
         if (h || v || wrap) {
           applyAlignment = ' applyAlignment="1"';
-          alignmentXml = `<alignment${h}${v}${wrap} />`;
+          alignmentXml = `<alignment${h}${v}${wrap}/>`;
         }
       }
 
-      cellXfsXml += `<xf numFmtId="0" fontId="${fontRef}" fillId="${fillRef}" borderId="${borderRef}" xfId="0"${applyAlignment}>${alignmentXml}</xf>`;
-    }
-    if (styles.size === 0) {
-      cellXfsXml += `<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" />`;
+      cellXfsXml += `<xf numFmtId="${xf.numFmtId}" fontId="${xf.fontId}" fillId="${xf.fillId}" borderId="${xf.borderId}" xfId="0"${applyNumFmt}${applyFont}${applyFill}${applyBorder}${applyAlignment}>${alignmentXml}</xf>`;
     }
     cellXfsXml += "</cellXfs>";
 

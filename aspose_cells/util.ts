@@ -2,6 +2,8 @@ import { readFile } from "fs/promises";
 import { ZipReader, BlobReader, TextWriter, BlobWriter } from "@zip.js/zip.js";
 import * as crypto from "crypto";
 
+const AdmZip = require("adm-zip");
+
 export type CellValue = string | number | boolean | Date | null;
 
 export interface CellCoordinates {
@@ -113,19 +115,83 @@ export function generateUuid(): string {
   });
 }
 
-export async function createZipWriter() {
-  const { ZipWriter } = await import("@zip.js/zip.js");
-  return new ZipWriter(new BlobWriter());
+let zipInstance: ReturnType<typeof AdmZip> | null = null;
+
+export function createZipWriter() {
+  zipInstance = new AdmZip();
+  return {
+    add: (path: string, content: string) => {
+      zipInstance!.addFile(path, Buffer.from(content, "utf8"));
+    },
+    close: () => {
+      const buffer = zipInstance!.toBuffer();
+      zipInstance = null;
+      return Promise.resolve(buffer);
+    },
+  };
+}
+
+export function fixZipFile(data: Uint8Array): Uint8Array {
+  const buffer = Buffer.from(data);
+  const zlib = require("zlib");
+
+  function crc32(buf: Buffer) {
+    return zlib.crc32(buf) >>> 0;
+  }
+
+  let offset = 0;
+
+  // Fix local file headers - clear bit 11 (0x0800)
+  while (offset < buffer.length) {
+    const sig = buffer.readUInt32LE(offset);
+    if (sig !== 0x04034b50) break;
+
+    const flags = buffer.readUInt16LE(offset + 6);
+    if (flags & 0x0800) {
+      buffer.writeUInt16LE(flags & ~0x0800, offset + 6);
+    }
+
+    const fnameLen = buffer.readUInt16LE(offset + 26);
+    const extraLen = buffer.readUInt16LE(offset + 28);
+
+    // Find next
+    const dataStart = offset + 30 + fnameLen + extraLen;
+    let nextOffset = buffer.indexOf(
+      Buffer.from([0x50, 0x4b, 0x03, 0x04]),
+      dataStart + 1,
+    );
+    if (nextOffset === -1) nextOffset = buffer.length;
+    offset = nextOffset;
+  }
+
+  // Fix central directory - clear bit 11 (0x0800)
+  let cdOffset = buffer.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
+  if (cdOffset !== -1) {
+    while (buffer.readUInt32LE(cdOffset) === 0x02014b50) {
+      const cdFlags = buffer.readUInt16LE(cdOffset + 8);
+      if (cdFlags & 0x0800) {
+        buffer.writeUInt16LE(cdFlags & ~0x0800, cdOffset + 8);
+      }
+
+      const fnameLen = buffer.readUInt16LE(cdOffset + 28);
+      const extraLen = buffer.readUInt16LE(cdOffset + 30);
+      const commentLen = buffer.readUInt16LE(cdOffset + 32);
+      const entrySize = 46 + fnameLen + extraLen + commentLen;
+
+      cdOffset += entrySize;
+    }
+  }
+
+  return new Uint8Array(buffer);
 }
 
 export async function addZipEntry(zip: any, path: string, content: string) {
-  const { TextReader } = await import("@zip.js/zip.js");
-  await zip.add(path, new TextReader(content));
+  await zip.add(path, content);
 }
 
 export async function finalizeZip(zip: any): Promise<Uint8Array> {
-  const blob = await zip.close();
-  return new Uint8Array(await blob.arrayBuffer());
+  const buffer = await zip.close();
+  return new Uint8Array(buffer);
 }
 
 export function deriveKey(password: string, salt: Uint8Array): Buffer {

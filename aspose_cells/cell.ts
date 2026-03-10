@@ -125,7 +125,10 @@ export class Cell {
       valueXml = `<f>${escapeXml(this._formula)}</f>${valueXml}`;
     }
 
-    const styleAttr = this._style ? ' s="1"' : "";
+    const styleAttr =
+      this._styleIndex !== undefined && this._styleIndex !== 0
+        ? ` s="${this._styleIndex}"`
+        : "";
 
     let attrsStr = " " + attrs;
     if (typeAttr) attrsStr += " " + typeAttr;
