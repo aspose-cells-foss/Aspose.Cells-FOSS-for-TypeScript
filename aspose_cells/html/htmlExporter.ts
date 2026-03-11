@@ -1,6 +1,9 @@
 import { Workbook } from "../workbook";
 import { Worksheet } from "../worksheet";
 import { join } from "path";
+import type { ShapeInfo } from "../types";
+
+const EMU_PER_PIXEL = 914400 / 96;
 
 export class HtmlExporter {
   private workbook: Workbook;
@@ -501,6 +504,7 @@ A {
     isFirst: boolean,
   ): string {
     const tableHtml = this.worksheetToHtmlForExcel(worksheet);
+    const shapesHtml = this.generateShapesHtml(worksheet);
 
     return `﻿<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 <html xmlns:v="urn:schemas-microsoft-com:vml"
@@ -517,17 +521,17 @@ xmlns="http://www.w3.org/TR/REC-html40">
 <link rel="Edit-Time-Data" href="editdata.mso"/>
 <!--[if !mso]>
 <style  type="text/css">
-v\\:* {behavior:url(#default#VML);}
-o\\:* {behavior:url(#default#VML);}
-x\\:* {behavior:url(#default#VML);}
+v\:* {behavior:url(#default#VML);}
+o\:* {behavior:url(#default#VML);}
+x\:* {behavior:url(#default#VML);}
 .shape {behavior:url(#default#VML);}
 </style>
 <![endif]-->
 <link rel="Stylesheet" href="stylesheet.css"/>
 <style type="text/css">
 <!--table
- {mso-displayed-decimal-separator:"\\.";
- mso-displayed-thousand-separator:"\\,";}
+ {mso-displayed-decimal-separator:"\.";
+ mso-displayed-thousand-separator:"\,";}
 @page
  {
  mso-header-data:"";
@@ -565,6 +569,7 @@ if (window.name!="frSheet")
 <body link='blue' vlink='purple' >
 
 ${tableHtml}
+${shapesHtml}
 
 </body>
 
@@ -661,6 +666,96 @@ ${tableHtml}
 </table>`;
 
     return tableHtml;
+  }
+
+  private generateShapesHtml(worksheet: Worksheet): string {
+    const shapes = worksheet.shapes;
+    if (shapes.length === 0) return "";
+
+    const cells = Array.from(worksheet.cells);
+    const maxRow = cells.length > 0 ? Math.max(...cells.map((c) => c.row)) : 0;
+    const maxCol = cells.length > 0 ? Math.max(...cells.map((c) => c.col)) : 0;
+
+    const columnWidths: number[] = [];
+    for (let col = 0; col <= maxCol; col++) {
+      columnWidths.push((worksheet.getColumnWidth(col) || 64) * EMU_PER_PIXEL);
+    }
+
+    const rowHeights: number[] = [];
+    for (let row = 0; row <= maxRow; row++) {
+      rowHeights.push((worksheet.getRowHeight(row) || 16) * EMU_PER_PIXEL);
+    }
+
+    let shapesHtml = "";
+    for (const shape of shapes) {
+      shapesHtml += this.shapeToVml(shape, columnWidths, rowHeights);
+    }
+
+    return shapesHtml;
+  }
+
+  private shapeToVml(
+    shape: ShapeInfo,
+    columnWidths: number[],
+    rowHeights: number[],
+  ): string {
+    let left = 0;
+    for (let col = 0; col < shape.fromCol; col++) {
+      left += columnWidths[col] || 64 * EMU_PER_PIXEL;
+    }
+    left += shape.fromColOff;
+
+    let top = 0;
+    for (let row = 0; row < shape.fromRow; row++) {
+      top += rowHeights[row] || 16 * EMU_PER_PIXEL;
+    }
+    top += shape.fromRowOff;
+
+    let right = 0;
+    for (let col = 0; col < shape.toCol; col++) {
+      right += columnWidths[col] || 64 * EMU_PER_PIXEL;
+    }
+    right += shape.toColOff;
+
+    let bottom = 0;
+    for (let row = 0; row < shape.toRow; row++) {
+      bottom += rowHeights[row] || 16 * EMU_PER_PIXEL;
+    }
+    bottom += shape.toRowOff;
+
+    const width = right - left;
+    const height = bottom - top;
+
+    const shapeType = this.getShapeType(shape.type);
+    const fillColor = shape.fillColor || "#ffffff";
+    const lineColor = shape.lineColor || "#000000";
+    const hasLine = shape.lineWidth && shape.lineWidth > 0;
+
+    return `<v:shape type="${shapeType}" style="position:absolute; left:${left}; top:${top}; width:${width}; height:${height};" fillcolor="${fillColor}" stroked="${hasLine ? "t" : "f"}">
+ <v:fill color2="${fillColor}"/>
+${hasLine ? ` <v:stroke color="${lineColor}" weight="${shape.lineWidth}"/>` : ' <v:stroke on="f"/>'}
+</v:shape>
+`;
+  }
+
+  private getShapeType(type: string): string {
+    const typeMap: Record<string, string> = {
+      rect: "_x0000_t75",
+      rectangle: "_x0000_t75",
+      ellipse: "_x0000_t2",
+      oval: "_x0000_t2",
+      line: "_x0000_t1",
+      straightConnector1: "_x0000_t1",
+      bentConnector3: "_x0000_t1",
+      bentConnector4: "_x0000_t1",
+      bentConnector5: "_x0000_t1",
+      triangle: "_x0000_t6",
+      rightTriangle: "_x0000_t7",
+      parallelogram: "_x0000_t4",
+      trapezoid: "_x0000_t5",
+      diamond: "_x0000_t3",
+    };
+    return typeMap[type.toLowerCase()] || "_x0000_t75";
   }
 
   private escapeHtml(str: string): string {
