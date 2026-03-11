@@ -606,10 +606,297 @@ export class Workbook {
       await addZipEntry(zip, "xl/sharedStrings.xml", sharedStringsXml);
     }
 
+    // Track if we need drawings
+    let hasDrawings = false;
+    for (const sheet of this._sheets.worksheets) {
+      if (sheet.shapes.length > 0) {
+        hasDrawings = true;
+        break;
+      }
+    }
+
     for (let i = 0; i < this._sheets.worksheets.length; i++) {
       const sheet = this._sheets.worksheets[i];
-      await addZipEntry(zip, `xl/worksheets/sheet${i + 1}.xml`, sheet.getXml());
+      const drawingIndex = hasDrawings && sheet.shapes.length > 0 ? i + 1 : 0;
+      await addZipEntry(
+        zip,
+        `xl/worksheets/sheet${i + 1}.xml`,
+        sheet.getXml(drawingIndex),
+      );
+
+      // Generate worksheet relationships and drawing file if has shapes
+      if (sheet.shapes.length > 0) {
+        await addZipEntry(
+          zip,
+          `xl/worksheets/_rels/sheet${i + 1}.xml.rels`,
+          this.generateWorksheetRels(i + 1),
+        );
+        await addZipEntry(
+          zip,
+          `xl/drawings/drawing${i + 1}.xml`,
+          this.generateDrawingXml(sheet),
+        );
+      }
     }
+  }
+
+  private generateWorksheetRels(sheetIndex: number): string {
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing${sheetIndex}.xml"/></Relationships>`;
+  }
+
+  private generateDrawingRels(drawingIndex: number): string {
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>`;
+  }
+
+  private generateDrawingsRels(): string {
+    let xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`;
+
+    let drawingCount = 0;
+    for (const sheet of this._sheets.worksheets) {
+      if (sheet.shapes.length > 0) {
+        drawingCount++;
+        xml += `<Relationship Id="rId${drawingCount}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="drawing${drawingCount}.xml" />`;
+      }
+    }
+
+    xml += "</Relationships>";
+    return xml;
+  }
+
+  private generateDrawingXml(worksheet: Worksheet): string {
+    const shapes = worksheet.shapes;
+    let xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">`;
+
+    for (let i = 0; i < shapes.length; i++) {
+      const shape = shapes[i];
+      xml += this.shapeToDrawingXml(shape, i, worksheet);
+    }
+
+    xml += "</xdr:wsDr>";
+    return xml;
+  }
+
+  private generateUniqueId(): string {
+    return '{' + this.generateGuid() + '}';
+  }
+
+  private generateGuid(): string {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0;
+      const v = c === 'x' ? r : (r & 0x3) | 0x8;
+      return v.toString(16).toUpperCase();
+    });
+  }
+
+  private shapeToDrawingXml(
+    shape: ShapeInfo,
+    index: number,
+    worksheet: Worksheet,
+  ): string {
+    const fromCol = shape.fromCol;
+    const fromColOff = shape.fromColOff;
+    const fromRow = shape.fromRow;
+    const fromRowOff = shape.fromRowOff;
+    const toCol = shape.toCol;
+    const toColOff = shape.toColOff;
+    const toRow = shape.toRow;
+    const toRowOff = shape.toRowOff;
+
+    const type = shape.type;
+    const typeLower = type.toLowerCase();
+    const isConnector = shape.isConnector || typeLower === "line" || typeLower.includes("connector");
+
+    const shapeType = this.getDrawingShapeType(type);
+    const fillColor = this.colorToScheme(shape.fillColor || "#ffffff");
+    const lineWidth = shape.lineWidth || 12700;
+
+    const x = this.getColumnPositionEMU(worksheet, fromCol) + fromColOff;
+    const y = this.getRowPositionEMU(worksheet, fromRow) + fromRowOff;
+    const xEnd = this.getColumnPositionEMU(worksheet, toCol) + toColOff;
+    const yEnd = this.getRowPositionEMU(worksheet, toRow) + toRowOff;
+    const cx = xEnd - x;
+    const cy = yEnd - y;
+
+    const flipV =
+      typeLower === "line" || typeLower.includes("connector") ? ' flipV="1"' : "";
+    const uniqueId = this.generateUniqueId();
+    const extLst = `<a:extLst><a:ext uri="{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}"><a16:creationId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" id="${uniqueId}"/></a:ext></a:extLst>`;
+
+    let anchor = `<xdr:twoCellAnchor><xdr:from><xdr:col>${fromCol}</xdr:col><xdr:colOff>${fromColOff}</xdr:colOff><xdr:row>${fromRow}</xdr:row><xdr:rowOff>${fromRowOff}</xdr:rowOff></xdr:from><xdr:to><xdr:col>${toCol}</xdr:col><xdr:colOff>${toColOff}</xdr:colOff><xdr:row>${toRow}</xdr:row><xdr:rowOff>${toRowOff}</xdr:rowOff></xdr:to>`;
+
+    const tailEnd = shape.hasArrowEnd ? "<a:ln><a:tailEnd type=\"triangle\"/></a:ln>" : "";
+    const lnStyle = lineWidth && lineWidth !== 12700 ? `<a:ln w="${lineWidth}"/>` : "";
+
+    if (isConnector) {
+      anchor += `<xdr:cxnSp macro=""><xdr:nvCxnSpPr><xdr:cNvPr id="${index + 3}" name="${escapeXml(shape.name)}">${extLst}</xdr:cNvPr><xdr:cNvCxnSpPr/></xdr:nvCxnSpPr><xdr:spPr><a:xfrm${flipV}><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="${shapeType}"><a:avLst/></a:prstGeom>${lnStyle}${tailEnd}</xdr:spPr><xdr:style>`;
+    } else {
+      anchor += `<xdr:sp macro="" textlink=""><xdr:nvSpPr><xdr:cNvPr id="${index + 3}" name="${escapeXml(shape.name)}">${extLst}</xdr:cNvPr><xdr:cNvSpPr/></xdr:nvSpPr><xdr:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="${shapeType}"><a:avLst/></a:prstGeom><a:solidFill>${fillColor}</a:solidFill></xdr:spPr><xdr:style>`;
+    }
+
+    // Match sample style format
+    if (isConnector) {
+      anchor += `<a:lnRef idx="1"><a:schemeClr val="accent1"/></a:lnRef><a:fillRef idx="0"><a:schemeClr val="accent1"/></a:fillRef><a:effectRef idx="0"><a:schemeClr val="accent1"/></a:effectRef><a:fontRef idx="minor"><a:schemeClr val="tx1"/></a:fontRef></xdr:style>`;
+    } else {
+      anchor += `<a:lnRef idx="2"><a:schemeClr val="accent1"><a:shade val="15000"/></a:schemeClr></a:lnRef><a:fillRef idx="1"><a:schemeClr val="accent1"/></a:fillRef><a:effectRef idx="0"><a:schemeClr val="accent1"/></a:effectRef><a:fontRef idx="minor"><a:schemeClr val="lt1"/></a:fontRef></xdr:style>`;
+    }
+
+    if (!isConnector) {
+      anchor += `<xdr:txBody><a:bodyPr vertOverflow="clip" horzOverflow="clip" rtlCol="0" anchor="t"/><a:lstStyle/><a:p><a:pPr algn="l"/><a:endParaRPr lang="en-US" sz="1100"/></a:p></xdr:txBody>`;
+    }
+
+    anchor += isConnector ? "</xdr:cxnSp>" : "</xdr:sp>";
+    anchor += "<xdr:clientData/></xdr:twoCellAnchor>";
+
+    return anchor;
+  }
+
+  private getColumnPositionEMU(worksheet: Worksheet, col: number): number {
+    if (col <= 0) return 0;
+    const defaultColWidth = 609600;
+    let pos = 0;
+    for (let c = 0; c < col; c++) {
+      const width = worksheet.getColumnWidth(c);
+      pos += width ? width * 10332 : defaultColWidth;
+    }
+    return Math.round(pos);
+  }
+
+  private getRowPositionEMU(worksheet: Worksheet, row: number): number {
+    if (row <= 0) return 0;
+    const defaultRowHeight = 158750;
+    let pos = 0;
+    for (let r = 0; r < row; r++) {
+      const height = worksheet.getRowHeight(r);
+      pos += height ? height * 10332 : defaultRowHeight;
+    }
+    return Math.round(pos);
+  }
+
+  private getDrawingShapeType(type: string): string {
+    const typeMap: Record<string, string> = {
+      rect: "rect",
+      rectangle: "rect",
+      ellipse: "ellipse",
+      oval: "ellipse",
+      line: "line",
+      straightConnector1: "straightConnector1",
+      straightConnector2: "straightConnector2",
+      straightConnector3: "straightConnector3",
+      bentConnector1: "bentConnector1",
+      bentConnector2: "bentConnector2",
+      bentConnector3: "bentConnector3",
+      bentConnector4: "bentConnector4",
+      bentConnector5: "bentConnector5",
+      curvedConnector1: "curvedConnector1",
+      curvedConnector2: "curvedConnector2",
+      curvedConnector3: "curvedConnector3",
+      curvedConnector4: "curvedConnector4",
+      curvedConnector5: "curvedConnector5",
+      triangle: "triangle",
+      rightTriangle: "rightTriangle",
+      parallelogram: "parallelogram",
+      trapezoid: "trapezoid",
+      diamond: "diamond",
+      snip1Rect: "snip1Rect",
+      snip2Same: "snip2Same",
+      snip2Diag: "snip2Diag",
+      snip4Same: "snip4Same",
+      snip4Diag: "snip4Diag",
+      round1Rect: "round1Rect",
+      round2Same: "round2Same",
+      round2Diag: "round2Diag",
+      round4Same: "round4Same",
+      round4Diag: "round4Diag",
+      pie: "pie",
+      pieWedge: "pieWedge",
+      quarterCircle: "quarterCircle",
+      halfCircle: "halfCircle",
+      threeQuarterCircle: "threeQuarterCircle",
+      brace: "brace",
+      bracket: "bracket",
+      arrow: "arrow",
+      rightArrow: "rightArrow",
+      leftArrow: "leftArrow",
+      upArrow: "upArrow",
+      downArrow: "downArrow",
+      leftRightArrow: "leftRightArrow",
+      upDownArrow: "upDownArrow",
+      quadrilateralArrow: "quadrilateralArrow",
+      pentagon: "pentagon",
+      hexagon: "hexagon",
+      heptagon: "heptagon",
+      octagon: "octagon",
+      decagon: "decagon",
+      dodecagon: "dodecagon",
+      star4: "star4",
+      star5: "star5",
+      star6: "star6",
+      star7: "star7",
+      star8: "star8",
+      star10: "star10",
+      star12: "star12",
+      star16: "star16",
+      star24: "star24",
+      star32: "star32",
+      plus: "plus",
+      mathPlus: "mathPlus",
+      mathMinus: "mathMinus",
+      mathMultiply: "mathMultiply",
+      mathDivide: "mathDivide",
+      mathEqual: "mathEqual",
+      mathNotEqual: "mathNotEqual",
+      ribbon: "ribbon",
+      ribbon2: "ribbon2",
+      chevron: "chevron",
+      pentagonArrow: "pentagonArrow",
+      chord: "chord",
+      cloud: "cloud",
+      cloudCallout: "cloudCallout",
+      sun: "sun",
+      moon: "moon",
+      doubleWave: "doubleWave",
+      irregularSeal1: "irregularSeal1",
+      irregularSeal2: "irregularSeal2",
+      irregularSeal3: "irregularSeal3",
+      irregularSeal4: "irregularSeal4",
+      irregularSeal5: "irregularSeal5",
+      irregularSeal6: "irregularSeal6",
+      irregularSeal7: "irregularSeal7",
+      irregularSeal8: "irregularSeal8",
+      irregularSeal9: "irregularSeal9",
+      irregularSeal10: "irregularSeal10",
+      explosion: "explosion",
+      lightningBolt: "lightningBolt",
+      heart: "heart",
+      pictureFrame: "pictureFrame",
+      tetris: "tetris",
+      cube: "cube",
+      cylinder: "cylinder",
+      cylinderSolid: "cylinderSolid",
+      prism: "prism",
+      prismRight: "prismRight",
+      trapezoid: "trapezoid",
+      nonIsoscelesTrapezoid: "nonIsoscelesTrapezoid",
+      starBurst: "starBurst",
+      smileyFace: "smileyFace",
+     Donut: "donut",
+    };
+    return typeMap[type] || "rect";
+  }
+
+  private colorToScheme(color: string): string {
+    const colorMap: Record<string, string> = {
+      "#4472c4": '<a:schemeClr val="accent1"/>',
+      "#ed7d31": '<a:schemeClr val="accent2"/>',
+      "#a5a5a5": '<a:schemeClr val="accent3"/>',
+      "#ffc000": '<a:schemeClr val="accent4"/>',
+      "#5b9bd5": '<a:schemeClr val="accent5"/>',
+      "#70ad47": '<a:schemeClr val="accent6"/>',
+    };
+    if (colorMap[color.toLowerCase()]) {
+      return colorMap[color.toLowerCase()];
+    }
+    return `<a:srgbClr val="${color.replace("#", "")}"/>`;
   }
 
   private generateRels(): string {
@@ -643,6 +930,15 @@ export class Workbook {
     // Add shared strings part if needed
     if (this._sharedStrings.length > 0) {
       xml += `<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml" />`;
+    }
+
+    // Add drawings to Content_Types if needed
+    let drawingCount = 0;
+    for (const sheet of this._sheets.worksheets) {
+      if (sheet.shapes.length > 0) {
+        drawingCount++;
+        xml += `<Override PartName="/xl/drawings/drawing${drawingCount}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml" />`;
+      }
     }
 
     xml += "</Types>";
@@ -716,9 +1012,9 @@ export class Workbook {
   private generateStyles(): string {
     const styles = this._sheets.styles;
 
-    // Collect unique fonts (index 0 = default)
+    // Collect unique fonts (index 0 = default - Excel default is Calibri 11)
     const fontEntries: any[] = [
-      { name: "Arial", size: 10, bold: false, italic: false },
+      { name: "Calibri", size: 11, bold: false, italic: false },
     ];
     const fontKeyMap = new Map<string, number>();
 
@@ -843,7 +1139,7 @@ export class Workbook {
     }
 
     // --- Generate fonts XML ---
-    let fontsXml = `<fonts count="${fontEntries.length}">`;
+    let fontsXml = `<fonts count="${fontEntries.length}" x14ac:knownFonts="1">`;
     for (const font of fontEntries) {
       const size = font.size || 10;
       const name = font.name || "Arial";

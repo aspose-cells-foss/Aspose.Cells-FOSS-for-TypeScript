@@ -31,6 +31,8 @@ export class Worksheet {
   private _columnWidths: Map<number, number> = new Map();
   private _rowHeights: Map<number, number> = new Map();
   private _shapes: ShapeInfo[] = [];
+  private _defaultColumnWidth?: number;
+  private _defaultRowHeight?: number;
 
   constructor(name: string, index: number) {
     this._name = name;
@@ -163,6 +165,22 @@ export class Worksheet {
     return this._rowHeights.get(row);
   }
 
+  set defaultColumnWidth(width: number | undefined) {
+    this._defaultColumnWidth = width;
+  }
+
+  get defaultColumnWidth(): number | undefined {
+    return this._defaultColumnWidth;
+  }
+
+  set defaultRowHeight(height: number | undefined) {
+    this._defaultRowHeight = height;
+  }
+
+  get defaultRowHeight(): number | undefined {
+    return this._defaultRowHeight;
+  }
+
   setCellStyle(cellRef: string, style: any) {
     const cell = this.getCellByRef(cellRef);
     if (cell) {
@@ -178,7 +196,7 @@ export class Worksheet {
     return this._shapes;
   }
 
-  toXml(): string {
+  toXml(drawingIndex: number = 0): string {
     const cols: string[] = [];
     for (const [col, width] of this._columnWidths) {
       // Convert from stored pixel width to Excel character width
@@ -226,7 +244,7 @@ export class Worksheet {
 
     const xmlnsAttrs = `xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="x14ac xr xr2 xr3" xmlns:x14ac="http://schemas.microsoft.com/office/spreadsheetml/2009/9/ac" xmlns:xr="http://schemas.microsoft.com/office/spreadsheetml/2014/revision" xmlns:xr2="http://schemas.microsoft.com/office/spreadsheetml/2015/revision2" xmlns:xr3="http://schemas.microsoft.com/office/spreadsheetml/2016/revision3" xr:uid="{CA87E96B-18A1-4CCB-99B8-D994280CBAA2}"`;
     const sheetViews = `<sheetViews><sheetView workbookViewId="0"/></sheetViews>`;
-    const sheetFormatPr = `<sheetFormatPr defaultRowHeight="12.5" x14ac:dyDescent="0.25"/>`;
+    const sheetFormatPr = `<sheetFormatPr defaultRowHeight="${this._defaultRowHeight || 12.5}" defaultColWidth="${this._defaultColumnWidth || 8}" x14ac:dyDescent="0.25"/>`;
     let sheetDataWithAttrs = "";
     for (const [rowNum, rowCells] of rows) {
       const span = `${minCol + 1}:${maxCol + 1}`;
@@ -239,10 +257,16 @@ export class Worksheet {
       }
       sheetDataWithAttrs += "</row>";
     }
-    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet ${xmlnsAttrs}><dimension ${dimension}/>${sheetViews}${sheetFormatPr}${colsStr}<sheetData>${sheetDataWithAttrs}</sheetData>${autoFilter}<pageMargins left="0.75" right="0.75" top="1" bottom="1" header="0.5" footer="0.5"/></worksheet>`;
+
+    let drawingRel = "";
+    if (drawingIndex > 0) {
+      drawingRel = `<drawing r:id="rId1"/>`;
+    }
+
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet ${xmlnsAttrs}><dimension ${dimension}/>${sheetViews}${sheetFormatPr}${colsStr}<sheetData>${sheetDataWithAttrs}</sheetData>${autoFilter}<pageMargins left="0.75" right="0.75" top="1" bottom="1" header="0.5" footer="0.5"/>${drawingRel}</worksheet>`;
   }
 
-  getXml(): string {
-    return this.toXml();
+  getXml(drawingIndex: number = 0): string {
+    return this.toXml(drawingIndex);
   }
 }

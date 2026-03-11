@@ -504,7 +504,6 @@ A {
     isFirst: boolean,
   ): string {
     const tableHtml = this.worksheetToHtmlForExcel(worksheet);
-    const shapesHtml = this.generateShapesHtml(worksheet);
 
     return `﻿<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 <html xmlns:v="urn:schemas-microsoft-com:vml"
@@ -569,7 +568,6 @@ if (window.name!="frSheet")
 <body link='blue' vlink='purple' >
 
 ${tableHtml}
-${shapesHtml}
 
 </body>
 
@@ -583,13 +581,25 @@ ${shapesHtml}
       return `<table border='0' cellpadding='0' cellspacing='0' style='border-collapse:collapse;table-layout:fixed;'></table>`;
     }
 
-    const maxRow = Math.max(...cells.map((c) => c.row));
-    const maxCol = Math.max(...cells.map((c) => c.col));
+    const shapes = worksheet.shapes;
+    const maxRow = Math.max(
+      ...cells.map((c) => c.row),
+      ...shapes.map((s) => s.toRow),
+    );
+    const maxCol = Math.max(
+      ...cells.map((c) => c.col),
+      ...shapes.map((s) => s.toCol),
+    );
 
     const defaultWidth = 64;
     const columnWidths: number[] = [];
     for (let col = 0; col <= maxCol; col++) {
       columnWidths.push(worksheet.getColumnWidth(col) || defaultWidth);
+    }
+
+    const rowHeights: number[] = [];
+    for (let row = 0; row <= maxRow; row++) {
+      rowHeights.push(worksheet.getRowHeight(row) || 16);
     }
 
     let totalWidth = 0;
@@ -648,7 +658,24 @@ ${shapesHtml}
           cellAttr += ` width='${colWidth}' style='width:${colWidth * 0.75}pt;'`;
         }
 
-        if (isNumber) {
+        // Find shapes that start at this cell
+        const cellShapes = shapes.filter(
+          (s) => s.fromRow === row && s.fromCol === col,
+        );
+
+        if (cellShapes.length > 0) {
+          let shapesInCell = "";
+          for (const shape of cellShapes) {
+            shapesInCell += this.shapeToCellSvg(
+              shape,
+              columnWidths,
+              rowHeights,
+            );
+          }
+
+          const cellContent = this.escapeHtml(value);
+          tableHtml += `\n<td ${cellAttr} valign='top' align='left'>${cellContent}${shapesInCell}</td>`;
+        } else if (isNumber) {
           tableHtml += `\n<td ${cellAttr} align='right'>${this.escapeHtml(value)}</td>`;
         } else {
           tableHtml += `\n<td ${cellAttr}>${this.escapeHtml(value)}</td>`;
@@ -659,13 +686,72 @@ ${shapesHtml}
     }
 
     tableHtml += `<![if supportMisalignedColumns]>
- <tr height='0' style='display:none'>
-  <td width='${totalWidth}' colspan='${maxCol + 1}' style='width:${totalWidth * 0.75}pt;mso-ignore:colspan;'></td>
- </tr>
- <![endif]>
+  <tr height='0' style='display:none'>
+   <td width='${totalWidth}' colspan='${maxCol + 1}' style='width:${totalWidth * 0.75}pt;mso-ignore:colspan;'></td>
+  </tr>
+  <![endif]>
 </table>`;
 
     return tableHtml;
+  }
+
+  private shapeToCellSvg(
+    shape: ShapeInfo,
+    columnWidths: number[],
+    rowHeights: number[],
+  ): string {
+    // Calculate position within the cell
+    let left = shape.fromColOff / EMU_PER_PIXEL;
+    let top = shape.fromRowOff / EMU_PER_PIXEL;
+
+    let right = 0;
+    for (let col = shape.fromCol; col < shape.toCol; col++) {
+      right += columnWidths[col] || 64;
+    }
+    right += shape.toColOff / EMU_PER_PIXEL;
+
+    let bottom = 0;
+    for (let row = shape.fromRow; row < shape.toRow; row++) {
+      bottom += rowHeights[row] || 16;
+    }
+    bottom += shape.toRowOff / EMU_PER_PIXEL;
+
+    const width = right - left;
+    const height = bottom - top;
+
+    const fillColor = shape.fillColor || "#ffffff";
+    const strokeColor = shape.lineColor || "#000000";
+    const strokeWidth = shape.lineWidth ? shape.lineWidth / EMU_PER_PIXEL : 0.5;
+
+    const type = shape.type.toLowerCase();
+    const isLine = type === "line" || type.includes("connector");
+
+    let svgContent = "";
+    if (isLine) {
+      const arrowDef = shape.hasArrowEnd
+        ? `<defs><marker id="arrow-${shape.name.replace(/\s/g, "_")}" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="${strokeColor}"/></marker></defs>`
+        : "";
+      svgContent = `${arrowDef}<line x1="${left}" y1="${top}" x2="${right}" y2="${bottom}" stroke="${strokeColor}" stroke-width="${Math.max(strokeWidth, 0.5)}" ${shape.hasArrowEnd ? `marker-end="url(#arrow-${shape.name.replace(/\s/g, "_")})"` : ""}/>`;
+    } else if (type === "ellipse" || type === "oval") {
+      const cx = left + width / 2;
+      const cy = top + height / 2;
+      svgContent = `<ellipse cx="${cx}" cy="${cy}" rx="${width / 2}" ry="${height / 2}" fill="${fillColor}" stroke="${strokeColor}" stroke-width="${Math.max(strokeWidth, 0.5)}"/>`;
+    } else if (type === "triangle" || type === "rightTriangle") {
+      if (type === "rightTriangle") {
+        svgContent = `<polygon points="${left},${top + height} ${left},${top} ${left + width},${top + height}" fill="${fillColor}" stroke="${strokeColor}" stroke-width="${Math.max(strokeWidth, 0.5)}"/>`;
+      } else {
+        svgContent = `<polygon points="${left + width / 2},${top} ${left},${top + height} ${left + width},${top + height}" fill="${fillColor}" stroke="${strokeColor}" stroke-width="${Math.max(strokeWidth, 0.5)}"/>`;
+      }
+    } else if (type === "diamond") {
+      svgContent = `<polygon points="${left + width / 2},${top} ${left + width},${top + height / 2} ${left + width / 2},${top + height} ${left},${top + height / 2}" fill="${fillColor}" stroke="${strokeColor}" stroke-width="${Math.max(strokeWidth, 0.5)}"/>`;
+    } else {
+      svgContent = `<rect x="${left}" y="${top}" width="${width}" height="${height}" fill="${fillColor}" stroke="${strokeColor}" stroke-width="${Math.max(strokeWidth, 0.5)}"/>`;
+    }
+
+    const svgWidth = width;
+    const svgHeight = height;
+
+    return `<span style='mso-ignore:vglayout;position:absolute;z-index:1;margin-left:${left}px;margin-top:${top}px;width:${svgWidth}px;height:${svgHeight}px'><svg xmlns="http://www.w3.org/2000/svg" width="${svgWidth}" height="${svgHeight}"><g id="${this.escapeHtml(shape.name)}">${svgContent}</g></svg></span>`;
   }
 
   private generateShapesHtml(worksheet: Worksheet): string {
