@@ -678,84 +678,108 @@ ${shapesHtml}
 
     const columnWidths: number[] = [];
     for (let col = 0; col <= maxCol; col++) {
-      columnWidths.push((worksheet.getColumnWidth(col) || 64) * EMU_PER_PIXEL);
+      columnWidths.push(worksheet.getColumnWidth(col) || 64);
     }
 
     const rowHeights: number[] = [];
     for (let row = 0; row <= maxRow; row++) {
-      rowHeights.push((worksheet.getRowHeight(row) || 16) * EMU_PER_PIXEL);
+      rowHeights.push(worksheet.getRowHeight(row) || 16);
     }
 
-    let shapesHtml = "";
-    for (const shape of shapes) {
-      shapesHtml += this.shapeToVml(shape, columnWidths, rowHeights);
+    // Calculate bounds from shapes
+    let maxX = 0;
+    let maxY = 0;
+
+    const processedShapes = shapes.map((shape) => {
+      let left = 0;
+      for (let col = 0; col < shape.fromCol; col++) {
+        left += columnWidths[col] || 64;
+      }
+      left += shape.fromColOff / EMU_PER_PIXEL;
+
+      let top = 0;
+      for (let row = 0; row < shape.fromRow; row++) {
+        top += rowHeights[row] || 16;
+      }
+      top += shape.fromRowOff / EMU_PER_PIXEL;
+
+      let right = 0;
+      for (let col = 0; col < shape.toCol; col++) {
+        right += columnWidths[col] || 64;
+      }
+      right += shape.toColOff / EMU_PER_PIXEL;
+
+      let bottom = 0;
+      for (let row = 0; row < shape.toRow; row++) {
+        bottom += rowHeights[row] || 16;
+      }
+      bottom += shape.toRowOff / EMU_PER_PIXEL;
+
+      if (right > maxX) maxX = right;
+      if (bottom > maxY) maxY = bottom;
+
+      return { shape, left, top, right, bottom };
+    });
+
+    const totalWidth = Math.max(
+      columnWidths.reduce((a, b) => a + b, 0),
+      maxX + 50,
+    );
+    const totalHeight = Math.max(
+      rowHeights.reduce((a, b) => a + b, 0),
+      maxY + 50,
+    );
+
+    let shapesSvg = "";
+    for (const { shape, left, top, right, bottom } of processedShapes) {
+      shapesSvg += this.shapeToSvgSimple(shape, left, top, right, bottom);
     }
 
-    return shapesHtml;
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${totalWidth}" height="${totalHeight}" style="position:absolute;top:0;left:0;z-index:10;">
+${shapesSvg}
+</svg>`;
   }
 
-  private shapeToVml(
+  private shapeToSvgSimple(
     shape: ShapeInfo,
-    columnWidths: number[],
-    rowHeights: number[],
+    x: number,
+    y: number,
+    right: number,
+    bottom: number,
   ): string {
-    let left = 0;
-    for (let col = 0; col < shape.fromCol; col++) {
-      left += columnWidths[col] || 64 * EMU_PER_PIXEL;
-    }
-    left += shape.fromColOff;
+    const width = right - x;
+    const height = bottom - y;
 
-    let top = 0;
-    for (let row = 0; row < shape.fromRow; row++) {
-      top += rowHeights[row] || 16 * EMU_PER_PIXEL;
-    }
-    top += shape.fromRowOff;
-
-    let right = 0;
-    for (let col = 0; col < shape.toCol; col++) {
-      right += columnWidths[col] || 64 * EMU_PER_PIXEL;
-    }
-    right += shape.toColOff;
-
-    let bottom = 0;
-    for (let row = 0; row < shape.toRow; row++) {
-      bottom += rowHeights[row] || 16 * EMU_PER_PIXEL;
-    }
-    bottom += shape.toRowOff;
-
-    const width = right - left;
-    const height = bottom - top;
-
-    const shapeType = this.getShapeType(shape.type);
     const fillColor = shape.fillColor || "#ffffff";
-    const lineColor = shape.lineColor || "#000000";
-    const hasLine = shape.lineWidth && shape.lineWidth > 0;
+    const strokeColor = shape.lineColor || "#000000";
+    const strokeWidth = shape.lineWidth ? shape.lineWidth / EMU_PER_PIXEL : 0.5;
 
-    return `<v:shape type="${shapeType}" style="position:absolute; left:${left}; top:${top}; width:${width}; height:${height};" fillcolor="${fillColor}" stroked="${hasLine ? "t" : "f"}">
- <v:fill color2="${fillColor}"/>
-${hasLine ? ` <v:stroke color="${lineColor}" weight="${shape.lineWidth}"/>` : ' <v:stroke on="f"/>'}
-</v:shape>
-`;
-  }
+    const type = shape.type.toLowerCase();
+    const isLine = type === "line" || type.includes("connector");
 
-  private getShapeType(type: string): string {
-    const typeMap: Record<string, string> = {
-      rect: "_x0000_t75",
-      rectangle: "_x0000_t75",
-      ellipse: "_x0000_t2",
-      oval: "_x0000_t2",
-      line: "_x0000_t1",
-      straightConnector1: "_x0000_t1",
-      bentConnector3: "_x0000_t1",
-      bentConnector4: "_x0000_t1",
-      bentConnector5: "_x0000_t1",
-      triangle: "_x0000_t6",
-      rightTriangle: "_x0000_t7",
-      parallelogram: "_x0000_t4",
-      trapezoid: "_x0000_t5",
-      diamond: "_x0000_t3",
-    };
-    return typeMap[type.toLowerCase()] || "_x0000_t75";
+    let element = "";
+    if (isLine) {
+      const arrowDef = shape.hasArrowEnd
+        ? `<defs><marker id="arrow-${shape.name.replace(/\s/g, "_")}" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="${strokeColor}"/></marker></defs>`
+        : "";
+      element = `${arrowDef}<line x1="${x}" y1="${y}" x2="${right}" y2="${bottom}" stroke="${strokeColor}" stroke-width="${Math.max(strokeWidth, 0.5)}" ${shape.hasArrowEnd ? `marker-end="url(#arrow-${shape.name.replace(/\s/g, "_")})"` : ""}/>`;
+    } else if (type === "ellipse" || type === "oval") {
+      const cx = x + width / 2;
+      const cy = y + height / 2;
+      element = `<ellipse cx="${cx}" cy="${cy}" rx="${width / 2}" ry="${height / 2}" fill="${fillColor}" stroke="${strokeColor}" stroke-width="${Math.max(strokeWidth, 0.5)}"/>`;
+    } else if (type === "triangle" || type === "rightTriangle") {
+      if (type === "rightTriangle") {
+        element = `<polygon points="${x},${y + height} ${x},${y} ${x + width},${y + height}" fill="${fillColor}" stroke="${strokeColor}" stroke-width="${Math.max(strokeWidth, 0.5)}"/>`;
+      } else {
+        element = `<polygon points="${x + width / 2},${y} ${x},${y + height} ${x + width},${y + height}" fill="${fillColor}" stroke="${strokeColor}" stroke-width="${Math.max(strokeWidth, 0.5)}"/>`;
+      }
+    } else if (type === "diamond") {
+      element = `<polygon points="${x + width / 2},${y} ${x + width},${y + height / 2} ${x + width / 2},${y + height} ${x},${y + height / 2}" fill="${fillColor}" stroke="${strokeColor}" stroke-width="${Math.max(strokeWidth, 0.5)}"/>`;
+    } else {
+      element = `<rect x="${x}" y="${y}" width="${width}" height="${height}" fill="${fillColor}" stroke="${strokeColor}" stroke-width="${Math.max(strokeWidth, 0.5)}"/>`;
+    }
+
+    return `  <g id="${this.escapeHtml(shape.name)}">${element}</g>\n`;
   }
 
   private escapeHtml(str: string): string {
