@@ -2,7 +2,7 @@ import { Worksheet } from "./worksheet";
 import { WorksheetCollection } from "./worksheetCollection";
 import { Cell } from "./cell";
 import { DOMParser } from "@xmldom/xmldom";
-import { CellValue, Style, SaveFormat, ShapeInfo } from "./types";
+import { CellValue, Style, SaveFormat, ShapeInfo, ShapeFill } from "./types";
 import {
   openZip as openZipUtil,
   readZipEntry as readZipEntryUtil,
@@ -948,7 +948,7 @@ export class Workbook {
       cylinderSolid: "cylinderSolid",
       prism: "prism",
       prismRight: "prismRight",
-      trapezoid: "trapezoid",
+      flowChartProcess: "flowChartProcess",
       nonIsoscelesTrapezoid: "nonIsoscelesTrapezoid",
       starBurst: "starBurst",
       smileyFace: "smileyFace",
