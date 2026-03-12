@@ -721,35 +721,114 @@ ${tableHtml}
     const width = right - left;
     const height = bottom - top;
 
-    const fillColor = shape.fillColor || "#ffffff";
+    const schemeColorMap: Record<string, string> = {
+      accent1: "#4472C4",
+      accent2: "#ED7D31",
+      accent3: "#A5A5A5",
+      accent4: "#FFC000",
+      accent5: "#5B9BD5",
+      accent6: "#70AD47",
+    };
+
+    let fillColor = "#ffffff";
+    let hasFill = false;
+    let gradientDefs = "";
+    if (shape.fill && shape.fill.type !== 'none') {
+      hasFill = true;
+      if (shape.fill.type === 'solid' && shape.fill.color) {
+        if (shape.fill.isSchemeColor && schemeColorMap[shape.fill.color]) {
+          fillColor = schemeColorMap[shape.fill.color];
+        } else if (shape.fill.color.startsWith('#')) {
+          fillColor = shape.fill.color.toUpperCase();
+        } else if (schemeColorMap[shape.fill.color]) {
+          fillColor = schemeColorMap[shape.fill.color];
+        } else {
+          fillColor = shape.fill.color;
+        }
+      } else if (shape.fill.type === 'gradient' && shape.fill.gradientStops) {
+        const gradientId = `grad_${shape.name.replace(/\s/g, "_")}`;
+        const angle = shape.fill.gradientAngle ? shape.fill.gradientAngle / 10000 : 0;
+        let gradientStopsXml = "";
+        for (const stop of shape.fill.gradientStops) {
+          let stopColor = stop.color;
+          if (stop.isSchemeColor && schemeColorMap[stop.color]) {
+            stopColor = schemeColorMap[stop.color];
+          } else if (!stop.color.startsWith('#')) {
+            stopColor = (schemeColorMap[stop.color] || stop.color);
+          }
+          gradientStopsXml += `<stop offset="${stop.position / 1000}" stop-color="${stopColor.toUpperCase()}" stop-opacity="1" />`;
+        }
+        gradientDefs = `
+   <linearGradient id="${gradientId}" x1="0%" x2="0%" y1="0%" y2="100%" gradientTransform="rotate(${angle - 90}, 0.5, 0.5)">
+    ${gradientStopsXml}
+   </linearGradient>`;
+        fillColor = `url(#${gradientId})`;
+      }
+    } else if (shape.fillColor && shape.fillColor !== "#ffffff" && shape.fillColor !== "white") {
+      hasFill = true;
+      fillColor = shape.fillColor.toUpperCase();
+    }
+    
     const strokeColor = shape.lineColor || "#000000";
 
     const type = shape.type.toLowerCase();
     const isLine = type === "line" || type.includes("connector");
 
-    const svgWidth = (width / 1.33333).toFixed(2) + "pt";
-    const svgHeight = (height / 1.33333).toFixed(2) + "pt";
+    const svgWidth = (width / 1.33333 + 0.75).toFixed(2) + "pt";
+    const svgHeight = (height / 1.33333 + 0.75).toFixed(2) + "pt";
 
     let fillPath = "";
     let strokePath = "";
+    let transform = "";
     
     const scale = 1.33333;
     const px = 0.5;
     const py = 0.5;
     const pw = width / scale - 0.5;
     const ph = height / scale - 0.5;
+
+    const rotationRad = (shape.rotation || 0) * Math.PI / 180;
+    const cosR = Math.cos(rotationRad);
+    const sinR = Math.sin(rotationRad);
+    
+    if (shape.rotation && shape.rotation !== 0) {
+      const cx = (width / scale) / 2;
+      const cy = (height / scale) / 2;
+      transform = `matrix(${cosR},${sinR},${-sinR},${cosR},${cy * sinR + cx - cx * cosR},${cy - cx * sinR - cy * cosR})`;
+    } else if (shape.flipV) {
+      transform = `matrix(1,0,0,-1,0,${height / EMU_PER_PIXEL})`;
+    } else if (shape.flipH) {
+      transform = `matrix(-1,0,0,1,${width / EMU_PER_PIXEL},0)`;
+    }
     
     if (isLine) {
       const className = getClassName();
       strokePath = `<path d="M${left / scale},${top / scale} L${right / scale},${bottom / scale} " class="${className}" fill="none" transform="matrix(1,0,0,1,-0.000007629,-0.000007629)" />`;
+      
+      if (shape.hasArrowEnd) {
+        const dx = right - left;
+        const dy = bottom - top;
+        const angle = Math.atan2(dy, dx);
+        const arrowSize = 8;
+        const arrowAngle = Math.PI / 6;
+        
+        const ax1 = right - arrowSize * Math.cos(angle - arrowAngle);
+        const ay1 = bottom - arrowSize * Math.sin(angle - arrowAngle);
+        const ax2 = right - arrowSize * Math.cos(angle + arrowAngle);
+        const ay2 = bottom - arrowSize * Math.sin(angle + arrowAngle);
+        
+        const arrowPath = `M${right / scale},${bottom / scale} L${ax1 / scale},${ay1 / scale} L${ax2 / scale},${ay2 / scale} Z`;
+        fillPath = `<path d="${arrowPath}" fill="${strokeColor}" transform="matrix(1,0,0,1,-0.000007629,-0.000007629)" />`;
+      }
     } else if (type === "ellipse" || type === "oval") {
       const cx = px + pw / 2;
       const cy = py + ph / 2;
       const rx = pw / 2;
       const ry = ph / 2;
-      fillPath = `<path d="M${cx},${cy - ry} C${cx + rx},${cy - ry} ${cx + rx},${cy + ry} ${cx},${cy + ry} C${cx - rx},${cy + ry} ${cx - rx},${cy - ry} ${cx},${cy - ry} Z" fill="${fillColor}" />`;
+      const ellipsePath = `M${cx},${cy - ry} C${cx + rx},${cy - ry} ${cx + rx},${cy + ry} ${cx},${cy + ry} C${cx - rx},${cy + ry} ${cx - rx},${cy - ry} ${cx},${cy - ry} Z`;
+      fillPath = hasFill ? `<path d="${ellipsePath}" fill="${fillColor}"${transform ? ` transform="${transform}"` : ''} />` : '';
       const className = getClassName();
-      strokePath = `<path d="M${cx},${cy - ry} C${cx + rx},${cy - ry} ${cx + rx},${cy + ry} ${cx},${cy + ry} C${cx - rx},${cy + ry} ${cx - rx},${cy - ry} ${cx},${cy - ry} Z" class="${className}" fill="none" />`;
+      strokePath = `<path d="${ellipsePath}" class="${className}" fill="none"${transform ? ` transform="${transform}"` : ''} />`;
     } else if (type === "triangle" || type === "rightTriangle") {
       let pathD: string;
       if (type === "rightTriangle") {
@@ -757,19 +836,19 @@ ${tableHtml}
       } else {
         pathD = `M${px + pw / 2},${py} L${px},${py + ph} L${px + pw},${py + ph} Z`;
       }
-      fillPath = `<path d="${pathD} " fill="${fillColor}" />`;
+      fillPath = hasFill ? `<path d="${pathD} " fill="${fillColor}"${transform ? ` transform="${transform}"` : ''} />` : '';
       const className = getClassName();
-      strokePath = `<path d="${pathD} " class="${className}" fill="none" />`;
+      strokePath = `<path d="${pathD} " class="${className}" fill="none"${transform ? ` transform="${transform}"` : ''} />`;
     } else if (type === "diamond") {
       const pathD = `M${px + pw / 2},${py} L${px + pw},${py + ph / 2} L${px + pw / 2},${py + ph} L${px},${py + ph / 2} Z`;
-      fillPath = `<path d="${pathD} " fill="${fillColor}" />`;
+      fillPath = hasFill ? `<path d="${pathD} " fill="${fillColor}"${transform ? ` transform="${transform}"` : ''} />` : '';
       const className = getClassName();
-      strokePath = `<path d="${pathD} " class="${className}" fill="none" />`;
+      strokePath = `<path d="${pathD} " class="${className}" fill="none"${transform ? ` transform="${transform}"` : ''} />`;
     } else {
       const pathD = `M${px},${py} L${px + pw},${py} L${px + pw},${py + ph} L${px},${py + ph} Z`;
-      fillPath = `<path d="${pathD} " fill="${fillColor}" />`;
+      fillPath = hasFill ? `<path d="${pathD} " fill="${fillColor}"${transform ? ` transform="${transform}"` : ''} />` : '';
       const className = getClassName();
-      strokePath = `<path d="${pathD} " class="${className}" fill="none" />`;
+      strokePath = `<path d="${pathD} " class="${className}" fill="none"${transform ? ` transform="${transform}"` : ''} />`;
     }
 
     const strokeClassName = strokePath.match(/class="([^"]+)"/)?.[1] || "";
@@ -801,14 +880,15 @@ stroke-linejoin:miter;
       <g />
 ${strokePath ? `      ${strokePath}` : ''}
      </g>
+     </g>
     </g>
    </g>
   </g>
- </g>
- <defs />
- <defs>
-  ${styleBlock}
- </defs>
+  <defs>${gradientDefs}
+  </defs>
+  <defs>
+   ${styleBlock}
+  </defs>
 </svg>`;
 
     const leftPx = left / EMU_PER_PIXEL;
@@ -901,35 +981,113 @@ ${shapesSvg}
     const width = right - x;
     const height = bottom - y;
 
-    const fillColor = shape.fillColor || "#ffffff";
+    const schemeColorMap: Record<string, string> = {
+      accent1: "#4472c4",
+      accent2: "#ed7d31",
+      accent3: "#a5a5a5",
+      accent4: "#ffc000",
+      accent5: "#5b9bd5",
+      accent6: "#70ad47",
+    };
+
+    let fillColor = "white";
+    let hasFill = false;
+    let gradientDefs = "";
+    if (shape.fill && shape.fill.type !== 'none') {
+      hasFill = true;
+      if (shape.fill.type === 'solid' && shape.fill.color) {
+        if (shape.fill.isSchemeColor && schemeColorMap[shape.fill.color]) {
+          fillColor = schemeColorMap[shape.fill.color];
+        } else if (shape.fill.color.startsWith('#')) {
+          fillColor = shape.fill.color.toUpperCase();
+        } else if (schemeColorMap[shape.fill.color]) {
+          fillColor = schemeColorMap[shape.fill.color];
+        } else {
+          fillColor = shape.fill.color.toUpperCase();
+        }
+      } else if (shape.fill.type === 'gradient' && shape.fill.gradientStops) {
+        const gradientId = `grad_${shape.name.replace(/\s/g, "_")}`;
+        const angle = shape.fill.gradientAngle ? shape.fill.gradientAngle / 10000 : 0;
+        let gradientStopsXml = "";
+        for (const stop of shape.fill.gradientStops) {
+          let stopColor = stop.color;
+          if (stop.isSchemeColor && schemeColorMap[stop.color]) {
+            stopColor = schemeColorMap[stop.color];
+          } else if (!stop.color.startsWith('#')) {
+            stopColor = schemeColorMap[stop.color] || stop.color;
+          }
+          gradientStopsXml += `<stop offset="${stop.position / 1000}" stop-color="${stopColor}" stop-opacity="1" />`;
+        }
+        gradientDefs = `
+  <linearGradient id="${gradientId}" x1="0%" x2="0%" y1="0%" y2="100%" gradientTransform="rotate(${angle - 90}, 0.5, 0.5)">
+   ${gradientStopsXml}
+  </linearGradient>`;
+        fillColor = `url(#${gradientId})`;
+      }
+    } else if (shape.fillColor && shape.fillColor !== "#ffffff" && shape.fillColor !== "white") {
+      hasFill = true;
+      fillColor = shape.fillColor;
+    }
+    
     const strokeColor = shape.lineColor || "#000000";
-    const strokeWidth = shape.lineWidth ? shape.lineWidth / EMU_PER_PIXEL : 0.5;
 
     const type = shape.type.toLowerCase();
     const isLine = type === "line" || type.includes("connector");
 
-    const svgWidth = (width / 1.33333).toFixed(2) + "pt";
-    const svgHeight = (height / 1.33333).toFixed(2) + "pt";
+    const svgWidth = (width).toFixed(2) + "pt";
+    const svgHeight = (height).toFixed(2) + "pt";
 
     let fillPath = "";
     let strokePath = "";
+    let transform = "";
     
     const px = 0.5;
     const py = 0.5;
     const pw = width - 0.5;
     const ph = height - 0.5;
+
+    const rotationRad = (shape.rotation || 0) * Math.PI / 180;
+    const cosR = Math.cos(rotationRad);
+    const sinR = Math.sin(rotationRad);
+    
+    if (shape.rotation && shape.rotation !== 0) {
+      const cx = width / 2;
+      const cy = height / 2;
+      transform = `matrix(${cosR},${sinR},${-sinR},${cosR},${cy * sinR + cx - cx * cosR},${cy - cx * sinR - cy * cosR})`;
+    } else if (shape.flipV) {
+      transform = `matrix(1,0,0,-1,0,${height})`;
+    } else if (shape.flipH) {
+      transform = `matrix(-1,0,0,1,${width},0)`;
+    }
     
     if (isLine) {
       const className = getClassName();
       strokePath = `<path d="M${x},${y} L${right},${bottom} " class="${className}" fill="none" transform="matrix(1,0,0,1,-0.000007629,-0.000007629)" />`;
+      
+      if (shape.hasArrowEnd) {
+        const dx = right - x;
+        const dy = bottom - y;
+        const angle = Math.atan2(dy, dx);
+        const arrowSize = 8;
+        const arrowAngle = Math.PI / 6;
+        
+        const ax1 = right - arrowSize * Math.cos(angle - arrowAngle);
+        const ay1 = bottom - arrowSize * Math.sin(angle - arrowAngle);
+        const ax2 = right - arrowSize * Math.cos(angle + arrowAngle);
+        const ay2 = bottom - arrowSize * Math.sin(angle + arrowAngle);
+        
+        const arrowPath = `M${right},${bottom} L${ax1},${ay1} L${ax2},${ay2} Z`;
+        fillPath = `<path d="${arrowPath}" fill="${strokeColor}" transform="matrix(1,0,0,1,-0.000007629,-0.000007629)" />`;
+      }
     } else if (type === "ellipse" || type === "oval") {
       const cx = px + pw / 2;
       const cy = py + ph / 2;
       const rx = pw / 2;
       const ry = ph / 2;
-      fillPath = `<path d="M${cx},${cy - ry} C${cx + rx},${cy - ry} ${cx + rx},${cy + ry} ${cx},${cy + ry} C${cx - rx},${cy + ry} ${cx - rx},${cy - ry} ${cx},${cy - ry} Z" fill="${fillColor}" />`;
+      const ellipsePath = `M${cx},${cy - ry} C${cx + rx},${cy - ry} ${cx + rx},${cy + ry} ${cx},${cy + ry} C${cx - rx},${cy + ry} ${cx - rx},${cy - ry} ${cx},${cy - ry} Z`;
+      fillPath = hasFill ? `<path d="${ellipsePath}" fill="${fillColor}"${transform ? ` transform="${transform}"` : ''} />` : '';
       const className = getClassName();
-      strokePath = `<path d="M${cx},${cy - ry} C${cx + rx},${cy - ry} ${cx + rx},${cy + ry} ${cx},${cy + ry} C${cx - rx},${cy + ry} ${cx - rx},${cy - ry} ${cx},${cy - ry} Z" class="${className}" fill="none" />`;
+      strokePath = `<path d="${ellipsePath}" class="${className}" fill="none"${transform ? ` transform="${transform}"` : ''} />`;
     } else if (type === "triangle" || type === "rightTriangle") {
       let pathD: string;
       if (type === "rightTriangle") {
@@ -937,19 +1095,19 @@ ${shapesSvg}
       } else {
         pathD = `M${px + pw / 2},${py} L${px},${py + ph} L${px + pw},${py + ph} Z`;
       }
-      fillPath = `<path d="${pathD} " fill="${fillColor}" />`;
+      fillPath = hasFill ? `<path d="${pathD} " fill="${fillColor}"${transform ? ` transform="${transform}"` : ''} />` : '';
       const className = getClassName();
-      strokePath = `<path d="${pathD} " class="${className}" fill="none" />`;
+      strokePath = `<path d="${pathD} " class="${className}" fill="none"${transform ? ` transform="${transform}"` : ''} />`;
     } else if (type === "diamond") {
       const pathD = `M${px + pw / 2},${py} L${px + pw},${py + ph / 2} L${px + pw / 2},${py + ph} L${px},${py + ph / 2} Z`;
-      fillPath = `<path d="${pathD} " fill="${fillColor}" />`;
+      fillPath = hasFill ? `<path d="${pathD} " fill="${fillColor}"${transform ? ` transform="${transform}"` : ''} />` : '';
       const className = getClassName();
-      strokePath = `<path d="${pathD} " class="${className}" fill="none" />`;
+      strokePath = `<path d="${pathD} " class="${className}" fill="none"${transform ? ` transform="${transform}"` : ''} />`;
     } else {
       const pathD = `M${px},${py} L${px + pw},${py} L${px + pw},${py + ph} L${px},${py + ph} Z`;
-      fillPath = `<path d="${pathD} " fill="${fillColor}" />`;
+      fillPath = hasFill ? `<path d="${pathD} " fill="${fillColor}"${transform ? ` transform="${transform}"` : ''} />` : '';
       const className = getClassName();
-      strokePath = `<path d="${pathD} " class="${className}" fill="none" />`;
+      strokePath = `<path d="${pathD} " class="${className}" fill="none"${transform ? ` transform="${transform}"` : ''} />`;
     }
 
     const strokeClassName = strokePath.match(/class="([^"]+)"/)?.[1] || "";
@@ -985,7 +1143,8 @@ stroke-linejoin:miter;
     </g>
    </g>
   </g>
-  <defs />
+  <defs>${gradientDefs}
+  </defs>
   <defs>${styleBlock}
 </defs>
 `;

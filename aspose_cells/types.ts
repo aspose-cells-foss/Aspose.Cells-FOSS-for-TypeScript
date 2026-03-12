@@ -217,6 +217,7 @@ export interface ShapeInfo {
   lineWidth?: number; // EMU
   flipV?: boolean;
   flipH?: boolean;
+  rotation?: number; // rotation in degrees (1/60000 degree units stored in Excel)
   hasArrowEnd?: boolean;
   isConnector?: boolean;
 }

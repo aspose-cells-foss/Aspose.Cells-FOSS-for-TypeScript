@@ -334,6 +334,9 @@ export class Workbook {
       let lineWidth = 12700;
       let hasArrowEnd = false;
       let isConnector = false;
+      let flipV = false;
+      let flipH = false;
+      let rotation = 0;
 
       const sp = anchor.getElementsByTagName("xdr:sp")[0];
       const cxnSp = anchor.getElementsByTagName("xdr:cxnSp")[0];
@@ -344,6 +347,18 @@ export class Workbook {
         const spPr = (sp || cxnSp)?.getElementsByTagName("xdr:spPr")[0];
         
         if (spPr) {
+          const xfrm = spPr.getElementsByTagName("a:xfrm")[0];
+          if (xfrm) {
+            const flipVAttr = xfrm.getAttribute("flipV");
+            flipV = flipVAttr === "1";
+            const flipHAttr = xfrm.getAttribute("flipH");
+            flipH = flipHAttr === "1";
+            const rotAttr = xfrm.getAttribute("rot");
+            if (rotAttr) {
+              rotation = parseInt(rotAttr, 10) / 60000;
+            }
+          }
+
           const prstGeom = spPr.getElementsByTagName("a:prstGeom")[0];
           if (prstGeom) {
             shapeType = prstGeom.getAttribute("prst") || "rect";
@@ -357,7 +372,35 @@ export class Workbook {
           } else if (solidFill) {
             fill = this.parseSolidFill(solidFill);
           } else {
-            fill = { type: 'none' };
+            const style = (sp || cxnSp)?.getElementsByTagName("xdr:style")[0];
+            if (style) {
+              const fillRef = style.getElementsByTagName("a:fillRef")[0];
+              if (fillRef) {
+                const schemeClr = fillRef.getElementsByTagName("a:schemeClr")[0];
+                if (schemeClr) {
+                  fill = {
+                    type: 'solid',
+                    color: schemeClr.getAttribute("val") || "accent1",
+                    isSchemeColor: true,
+                  };
+                } else {
+                  const srgbClr = fillRef.getElementsByTagName("a:srgbClr")[0];
+                  if (srgbClr) {
+                    fill = {
+                      type: 'solid',
+                      color: "#" + (srgbClr.getAttribute("val") || "ffffff"),
+                      isSchemeColor: false,
+                    };
+                  } else {
+                    fill = { type: 'none' };
+                  }
+                }
+              } else {
+                fill = { type: 'none' };
+              }
+            } else {
+              fill = { type: 'none' };
+            }
           }
 
           const ln = spPr.getElementsByTagName("a:ln")[0];
@@ -401,6 +444,9 @@ export class Workbook {
         fillColor,
         lineColor,
         lineWidth,
+        flipV,
+        flipH,
+        rotation,
         hasArrowEnd,
         isConnector,
       };
@@ -456,10 +502,10 @@ export class Workbook {
     const schemeClr = solidFill.getElementsByTagName("a:schemeClr")[0];
     const srgbClr = solidFill.getElementsByTagName("a:srgbClr")[0];
     
-    let color: string | undefined;
+    let color: string = "#ffffff";
     let isSchemeColor = false;
     if (schemeClr) {
-      color = schemeClr.getAttribute("val") || "accent1"; // Keep scheme name
+      color = schemeClr.getAttribute("val") || "accent1";
       isSchemeColor = true;
     } else if (srgbClr) {
       color = "#" + (srgbClr.getAttribute("val") || "ffffff");
