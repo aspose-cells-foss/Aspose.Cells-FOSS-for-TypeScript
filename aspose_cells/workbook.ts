@@ -31,6 +31,9 @@ import {
   workbookToHtmlFull,
 } from "./html/index";
 import { ChartLoader } from "./chartLoader";
+import { ImpDrawing } from "./impDrawing";
+import { ExpDrawing } from "./expDrawing";
+import { DataRelationship } from "./dataRelationship";
 
 export class Workbook {
   private _sheets: WorksheetCollection;
@@ -77,18 +80,6 @@ export class Workbook {
 
   getNumFmt(numFmtId: string | null): string {
     return this._sheets.getNumFmt(numFmtId);
-  }
-
-  addWorksheet(name?: string): Worksheet {
-    return this._sheets.addWorksheet(name);
-  }
-
-  removeWorksheet(index: number): boolean {
-    return this._sheets.removeWorksheet(index);
-  }
-
-  moveWorksheet(fromIndex: number, toIndex: number): boolean {
-    return this._sheets.moveWorksheet(fromIndex, toIndex);
   }
 
   private async loadFile(filePath: string) {
@@ -269,333 +260,9 @@ export class Workbook {
 
       const worksheet = new Worksheet(name, i);
       await this.loadWorksheetData(zip, worksheet, target);
-      await this.loadWorksheetDrawing(zip, worksheet, target);
+      await ImpDrawing.loadWorksheetDrawing(zip, worksheet.shapes, target);
       this._sheets.worksheets.push(worksheet);
     }
-  }
-
-  private async loadWorksheetDrawing(
-    zip: any,
-    worksheet: Worksheet,
-    sheetPath: string,
-  ) {
-    const sheetRelsPath =
-      "xl/" + sheetPath.replace("worksheets/", "worksheets/_rels/") + ".rels";
-    const relsContent = await readZipEntryUtil(zip, sheetRelsPath);
-    if (!relsContent) return;
-
-    const relParser = new DOMParser();
-    const relDoc = relParser.parseFromString(relsContent, "text/xml");
-    const rels = relDoc.getElementsByTagName("Relationship");
-
-    let drawingTarget = "";
-    for (let i = 0; i < rels.length; i++) {
-      const rel = rels[i];
-      const type = rel.getAttribute("Type") || "";
-      if (type.includes("drawing")) {
-        drawingTarget = rel.getAttribute("Target") || "";
-        break;
-      }
-    }
-
-    if (!drawingTarget) return;
-
-    // Handle relative path like "../drawings/drawing1.xml"
-    let drawingPath: string;
-    if (drawingTarget.startsWith("../")) {
-      drawingPath = "xl/" + drawingTarget.substring(3);
-    } else if (sheetPath.includes("/")) {
-      drawingPath = "xl/" + sheetPath.replace(/[^/]+$/, "") + drawingTarget;
-    } else {
-      drawingPath = "xl/drawings/" + drawingTarget;
-    }
-
-    const drawingContent = await readZipEntryUtil(zip, drawingPath);
-    if (!drawingContent) return;
-
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(drawingContent, "text/xml");
-
-    const twoCellAnchors = doc.getElementsByTagName("xdr:twoCellAnchor");
-    for (let i = 0; i < twoCellAnchors.length; i++) {
-      const anchor = twoCellAnchors[i];
-
-      const from = anchor.getElementsByTagName("xdr:from")[0];
-      const to = anchor.getElementsByTagName("xdr:to")[0];
-      if (!from || !to) continue;
-
-      const fromCol = parseInt(this.getXmlValue(from, "xdr:col") || "0", 10);
-      const fromColOff = parseInt(
-        this.getXmlValue(from, "xdr:colOff") || "0",
-        10,
-      );
-      const fromRow = parseInt(this.getXmlValue(from, "xdr:row") || "0", 10);
-      const fromRowOff = parseInt(
-        this.getXmlValue(from, "xdr:rowOff") || "0",
-        10,
-      );
-      const toCol = parseInt(this.getXmlValue(to, "xdr:col") || "0", 10);
-      const toColOff = parseInt(this.getXmlValue(to, "xdr:colOff") || "0", 10);
-      const toRow = parseInt(this.getXmlValue(to, "xdr:row") || "0", 10);
-      const toRowOff = parseInt(this.getXmlValue(to, "xdr:rowOff") || "0", 10);
-
-      let shapeType = "rect";
-      let fillColor = "#ffffff";
-      let lineColor = "#000000";
-      let lineWidth = 12700;
-      let hasArrowEnd = false;
-      let isConnector = false;
-      let flipV = false;
-      let flipH = false;
-      let rotation = 0;
-
-      const sp = anchor.getElementsByTagName("xdr:sp")[0];
-      const cxnSp = anchor.getElementsByTagName("xdr:cxnSp")[0];
-      const graphicFrame = anchor.getElementsByTagName("xdr:graphicFrame")[0];
-
-      if (graphicFrame) {
-        continue;
-      }
-
-      let fill: ShapeFill | undefined;
-
-      if (sp || cxnSp) {
-        const spPr = (sp || cxnSp)?.getElementsByTagName("xdr:spPr")[0];
-
-        if (spPr) {
-          const xfrm = spPr.getElementsByTagName("a:xfrm")[0];
-          if (xfrm) {
-            const flipVAttr = xfrm.getAttribute("flipV");
-            flipV = flipVAttr === "1";
-            const flipHAttr = xfrm.getAttribute("flipH");
-            flipH = flipHAttr === "1";
-            const rotAttr = xfrm.getAttribute("rot");
-            if (rotAttr) {
-              rotation = parseInt(rotAttr, 10) / 60000;
-            }
-          }
-
-          const prstGeom = spPr.getElementsByTagName("a:prstGeom")[0];
-          if (prstGeom) {
-            shapeType = prstGeom.getAttribute("prst") || "rect";
-          }
-
-          const solidFill = spPr.getElementsByTagName("a:solidFill")[0];
-          const gradFill = spPr.getElementsByTagName("a:gradFill")[0];
-
-          if (gradFill) {
-            fill = this.parseGradFill(gradFill);
-          } else if (solidFill) {
-            fill = this.parseSolidFill(solidFill);
-          } else {
-            const style = (sp || cxnSp)?.getElementsByTagName("xdr:style")[0];
-            if (style) {
-              const fillRef = style.getElementsByTagName("a:fillRef")[0];
-              if (fillRef) {
-                const schemeClr =
-                  fillRef.getElementsByTagName("a:schemeClr")[0];
-                if (schemeClr) {
-                  fill = {
-                    type: "solid",
-                    color: schemeClr.getAttribute("val") || "accent1",
-                    isSchemeColor: true,
-                  };
-                } else {
-                  const srgbClr = fillRef.getElementsByTagName("a:srgbClr")[0];
-                  if (srgbClr) {
-                    fill = {
-                      type: "solid",
-                      color: "#" + (srgbClr.getAttribute("val") || "ffffff"),
-                      isSchemeColor: false,
-                    };
-                  } else {
-                    fill = { type: "none" };
-                  }
-                }
-              } else {
-                fill = { type: "none" };
-              }
-            } else {
-              fill = { type: "none" };
-            }
-          }
-
-          const ln = spPr.getElementsByTagName("a:ln")[0];
-          if (ln) {
-            lineWidth = parseInt(ln.getAttribute("w") || "12700", 10);
-            const strokeClr = ln.getElementsByTagName("a:srgbClr")[0];
-            const strokeScheme = ln.getElementsByTagName("a:schemeClr")[0];
-            if (strokeClr) {
-              lineColor = "#" + (strokeClr.getAttribute("val") || "000000");
-            } else if (strokeScheme) {
-              lineColor = this.parseSchemeColor(strokeScheme);
-            }
-          }
-        }
-
-        const tailEnd = (sp || cxnSp)?.getElementsByTagName("a:tailEnd")[0];
-        if (tailEnd) {
-          hasArrowEnd = true;
-        }
-
-        if (cxnSp) {
-          isConnector = true;
-        }
-      }
-
-      const nameEl = anchor.getElementsByTagName("xdr:cNvPr")[0];
-      const name = nameEl?.getAttribute("name") || `Shape ${i + 1}`;
-
-      const shape: ShapeInfo = {
-        name,
-        type: shapeType,
-        fromCol,
-        fromColOff,
-        fromRow,
-        fromRowOff,
-        toCol,
-        toColOff,
-        toRow,
-        toRowOff,
-        fill,
-        fillColor,
-        lineColor,
-        lineWidth,
-        flipV,
-        flipH,
-        rotation,
-        hasArrowEnd,
-        isConnector,
-      };
-
-      worksheet.addShape(shape);
-    }
-  }
-
-  private getXmlValue(parent: Element, tagName: string): string | null {
-    const el = parent.getElementsByTagName(tagName)[0];
-    return el?.textContent || null;
-  }
-
-  private parseSchemeColor(el: Element): string {
-    const lumMod = el.getElementsByTagName("a:lumMod")[0];
-    const lumOff = el.getElementsByTagName("a:lumOff")[0];
-    const shade = el.getElementsByTagName("a:shade")[0];
-
-    const val = el.getAttribute("val") || "accent1";
-    const colorMap: Record<string, string> = {
-      accent1: "4472c4",
-      accent2: "ed7d31",
-      accent3: "a5a5a5",
-      accent4: "ffc000",
-      accent5: "5b9bd5",
-      accent6: "70ad47",
-    };
-
-    let color = colorMap[val] || "4472c4";
-
-    if (shade) {
-      const shadeVal = parseInt(shade.getAttribute("val") || "0", 10) / 100000;
-      const r = parseInt(color.slice(0, 2), 16);
-      const g = parseInt(color.slice(2, 4), 16);
-      const b = parseInt(color.slice(4, 6), 16);
-      color =
-        "#" +
-        Math.round(r * (1 - shadeVal))
-          .toString(16)
-          .padStart(2, "0") +
-        Math.round(g * (1 - shadeVal))
-          .toString(16)
-          .padStart(2, "0") +
-        Math.round(b * (1 - shadeVal))
-          .toString(16)
-          .padStart(2, "0");
-    }
-
-    return "#" + color;
-  }
-
-  private parseSolidFill(solidFill: Element): ShapeFill {
-    const schemeClr = solidFill.getElementsByTagName("a:schemeClr")[0];
-    const srgbClr = solidFill.getElementsByTagName("a:srgbClr")[0];
-
-    let color: string = "#ffffff";
-    let isSchemeColor = false;
-    if (schemeClr) {
-      color = schemeClr.getAttribute("val") || "accent1";
-      isSchemeColor = true;
-    } else if (srgbClr) {
-      color = "#" + (srgbClr.getAttribute("val") || "ffffff");
-    }
-
-    return {
-      type: "solid",
-      color,
-      isSchemeColor,
-    };
-  }
-
-  private parseGradFill(gradFill: Element): ShapeFill {
-    const gsLst = gradFill.getElementsByTagName("a:gsLst")[0];
-    const lin = gradFill.getElementsByTagName("a:lin")[0];
-
-    const gradientStops: Array<{
-      position: number;
-      color: string;
-      isSchemeColor?: boolean;
-      lumMod?: number;
-      lumOff?: number;
-    }> = [];
-
-    if (gsLst) {
-      const gsElements = gsLst.getElementsByTagName("a:gs");
-      for (let i = 0; i < gsElements.length; i++) {
-        const gs = gsElements[i];
-        const pos = parseInt(gs.getAttribute("pos") || "0", 10);
-        const schemeClr = gs.getElementsByTagName("a:schemeClr")[0];
-        const srgbClr = gs.getElementsByTagName("a:srgbClr")[0];
-
-        let color: string;
-        let isSchemeColor = false;
-        let lumMod: number | undefined;
-        let lumOff: number | undefined;
-
-        if (schemeClr) {
-          color = schemeClr.getAttribute("val") || "accent1";
-          isSchemeColor = true;
-          const lumModEl = schemeClr.getElementsByTagName("a:lumMod")[0];
-          const lumOffEl = schemeClr.getElementsByTagName("a:lumOff")[0];
-          if (lumModEl) {
-            lumMod = parseInt(lumModEl.getAttribute("val") || "0", 10);
-          }
-          if (lumOffEl) {
-            lumOff = parseInt(lumOffEl.getAttribute("val") || "0", 10);
-          }
-        } else if (srgbClr) {
-          color = "#" + (srgbClr.getAttribute("val") || "ffffff");
-        } else {
-          color = "#000000";
-        }
-
-        gradientStops.push({
-          position: pos,
-          color,
-          isSchemeColor,
-          lumMod,
-          lumOff,
-        });
-      }
-    }
-
-    const gradientAngle = lin
-      ? parseInt(lin.getAttribute("ang") || "0", 10)
-      : 0;
-
-    return {
-      type: "gradient",
-      gradientStops,
-      gradientAngle,
-    };
   }
 
   private async loadWorksheetData(
@@ -776,133 +443,42 @@ export class Workbook {
 
       // Generate worksheet relationships and drawing file if has shapes
       if (sheet.shapes.length > 0) {
+        this.calculateShapePositions(sheet);
         await addZipEntry(
           zip,
           `xl/worksheets/_rels/sheet${i + 1}.xml.rels`,
-          this.generateWorksheetRels(i + 1),
+          DataRelationship.worksheetRels(i + 1),
         );
         await addZipEntry(
           zip,
           `xl/drawings/drawing${i + 1}.xml`,
-          this.generateDrawingXml(sheet),
+          ExpDrawing.generateDrawingXml(sheet.shapes),
         );
       }
     }
   }
 
-  private generateWorksheetRels(sheetIndex: number): string {
-    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing${sheetIndex}.xml"/></Relationships>`;
-  }
+  private calculateShapePositions(worksheet: Worksheet): void {
+    for (const shape of worksheet.shapes) {
+      const fromCol = shape.fromCol;
+      const fromColOff = shape.fromColOff ?? 0;
+      const fromRow = shape.fromRow;
+      const fromRowOff = shape.fromRowOff ?? 0;
+      const toCol = shape.toCol;
+      const toColOff = shape.toColOff ?? 0;
+      const toRow = shape.toRow;
+      const toRowOff = shape.toRowOff ?? 0;
 
-  private generateDrawingRels(drawingIndex: number): string {
-    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>`;
-  }
+      const x = this.getColumnPositionEMU(worksheet, fromCol) + fromColOff;
+      const y = this.getRowPositionEMU(worksheet, fromRow) + fromRowOff;
+      const xEnd = this.getColumnPositionEMU(worksheet, toCol) + toColOff;
+      const yEnd = this.getRowPositionEMU(worksheet, toRow) + toRowOff;
 
-  private generateDrawingsRels(): string {
-    let xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`;
-
-    let drawingCount = 0;
-    for (const sheet of this._sheets.worksheets) {
-      if (sheet.shapes.length > 0) {
-        drawingCount++;
-        xml += `<Relationship Id="rId${drawingCount}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="drawing${drawingCount}.xml" />`;
-      }
+      shape.x = x;
+      shape.y = y;
+      shape.width = xEnd - x;
+      shape.height = yEnd - y;
     }
-
-    xml += "</Relationships>";
-    return xml;
-  }
-
-  private generateDrawingXml(worksheet: Worksheet): string {
-    const shapes = worksheet.shapes;
-    let xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">`;
-
-    for (let i = 0; i < shapes.length; i++) {
-      const shape = shapes[i];
-      xml += this.shapeToDrawingXml(shape, i, worksheet);
-    }
-
-    xml += "</xdr:wsDr>";
-    return xml;
-  }
-
-  private generateUniqueId(): string {
-    return "{" + this.generateGuid() + "}";
-  }
-
-  private generateGuid(): string {
-    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-      const r = (Math.random() * 16) | 0;
-      const v = c === "x" ? r : (r & 0x3) | 0x8;
-      return v.toString(16).toUpperCase();
-    });
-  }
-
-  private shapeToDrawingXml(
-    shape: ShapeInfo,
-    index: number,
-    worksheet: Worksheet,
-  ): string {
-    const fromCol = shape.fromCol;
-    const fromColOff = shape.fromColOff ?? 0;
-    const fromRow = shape.fromRow;
-    const fromRowOff = shape.fromRowOff ?? 0;
-    const toCol = shape.toCol;
-    const toColOff = shape.toColOff ?? 0;
-    const toRow = shape.toRow;
-    const toRowOff = shape.toRowOff ?? 0;
-
-    const type = shape.type;
-    const typeLower = type.toLowerCase();
-    const isConnector =
-      shape.isConnector ||
-      typeLower === "line" ||
-      typeLower.includes("connector");
-
-    const shapeType = this.getDrawingShapeType(type);
-    const fillXml = this.shapeFillToXml(shape.fill, shape.fillColor);
-    const lineWidth = shape.lineWidth || 12700;
-
-    const x = this.getColumnPositionEMU(worksheet, fromCol) + fromColOff;
-    const y = this.getRowPositionEMU(worksheet, fromRow) + fromRowOff;
-    const xEnd = this.getColumnPositionEMU(worksheet, toCol) + toColOff;
-    const yEnd = this.getRowPositionEMU(worksheet, toRow) + toRowOff;
-    const cx = xEnd - x;
-    const cy = yEnd - y;
-
-    const flipV = typeLower === "line" ? ' flipV="1"' : "";
-    const uniqueId = this.generateUniqueId();
-    const extLst = `<a:extLst><a:ext uri="{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}"><a16:creationId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" id="${uniqueId}"/></a:ext></a:extLst>`;
-
-    let anchor = `<xdr:twoCellAnchor><xdr:from><xdr:col>${fromCol}</xdr:col><xdr:colOff>${fromColOff}</xdr:colOff><xdr:row>${fromRow}</xdr:row><xdr:rowOff>${fromRowOff}</xdr:rowOff></xdr:from><xdr:to><xdr:col>${toCol}</xdr:col><xdr:colOff>${toColOff}</xdr:colOff><xdr:row>${toRow}</xdr:row><xdr:rowOff>${toRowOff}</xdr:rowOff></xdr:to>`;
-
-    const tailEnd = shape.hasArrowEnd
-      ? '<a:ln><a:tailEnd type="triangle"/></a:ln>'
-      : "";
-    const lnStyle =
-      lineWidth && lineWidth !== 12700 ? `<a:ln w="${lineWidth}"/>` : "";
-
-    if (isConnector) {
-      anchor += `<xdr:cxnSp macro=""><xdr:nvCxnSpPr><xdr:cNvPr id="${index + 3}" name="${escapeXml(shape.name)}">${extLst}</xdr:cNvPr><xdr:cNvCxnSpPr/></xdr:nvCxnSpPr><xdr:spPr><a:xfrm${flipV}><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="${shapeType}"><a:avLst/></a:prstGeom>${lnStyle}${tailEnd}</xdr:spPr><xdr:style>`;
-    } else {
-      anchor += `<xdr:sp macro="" textlink=""><xdr:nvSpPr><xdr:cNvPr id="${index + 3}" name="${escapeXml(shape.name)}">${extLst}</xdr:cNvPr><xdr:cNvSpPr/></xdr:nvSpPr><xdr:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="${shapeType}"><a:avLst/></a:prstGeom>${fillXml}</xdr:spPr><xdr:style>`;
-    }
-
-    // Match sample style format
-    if (isConnector) {
-      anchor += `<a:lnRef idx="1"><a:schemeClr val="accent1"/></a:lnRef><a:fillRef idx="0"><a:schemeClr val="accent1"/></a:fillRef><a:effectRef idx="0"><a:schemeClr val="accent1"/></a:effectRef><a:fontRef idx="minor"><a:schemeClr val="tx1"/></a:fontRef></xdr:style>`;
-    } else {
-      anchor += `<a:lnRef idx="2"><a:schemeClr val="accent1"><a:shade val="15000"/></a:schemeClr></a:lnRef><a:fillRef idx="1"><a:schemeClr val="accent1"/></a:fillRef><a:effectRef idx="0"><a:schemeClr val="accent1"/></a:effectRef><a:fontRef idx="minor"><a:schemeClr val="lt1"/></a:fontRef></xdr:style>`;
-    }
-
-    if (!isConnector) {
-      anchor += `<xdr:txBody><a:bodyPr vertOverflow="clip" horzOverflow="clip" rtlCol="0" anchor="t"/><a:lstStyle/><a:p><a:pPr algn="l"/><a:endParaRPr lang="en-US" sz="1100"/></a:p></xdr:txBody>`;
-    }
-
-    anchor += isConnector ? "</xdr:cxnSp>" : "</xdr:sp>";
-    anchor += "<xdr:clientData/></xdr:twoCellAnchor>";
-
-    return anchor;
   }
 
   private getColumnPositionEMU(worksheet: Worksheet, col: number): number {
@@ -927,193 +503,14 @@ export class Workbook {
     return Math.round(pos);
   }
 
-  private getDrawingShapeType(type: string): string {
-    const typeMap: Record<string, string> = {
-      rect: "rect",
-      rectangle: "rect",
-      ellipse: "ellipse",
-      oval: "ellipse",
-      line: "line",
-      straightConnector1: "straightConnector1",
-      straightConnector2: "straightConnector2",
-      straightConnector3: "straightConnector3",
-      bentConnector1: "bentConnector1",
-      bentConnector2: "bentConnector2",
-      bentConnector3: "bentConnector3",
-      bentConnector4: "bentConnector4",
-      bentConnector5: "bentConnector5",
-      curvedConnector1: "curvedConnector1",
-      curvedConnector2: "curvedConnector2",
-      curvedConnector3: "curvedConnector3",
-      curvedConnector4: "curvedConnector4",
-      curvedConnector5: "curvedConnector5",
-      triangle: "triangle",
-      rightTriangle: "rightTriangle",
-      parallelogram: "parallelogram",
-      trapezoid: "trapezoid",
-      diamond: "diamond",
-      snip1Rect: "snip1Rect",
-      snip2Same: "snip2Same",
-      snip2Diag: "snip2Diag",
-      snip4Same: "snip4Same",
-      snip4Diag: "snip4Diag",
-      round1Rect: "round1Rect",
-      round2Same: "round2Same",
-      round2Diag: "round2Diag",
-      round4Same: "round4Same",
-      round4Diag: "round4Diag",
-      pie: "pie",
-      pieWedge: "pieWedge",
-      quarterCircle: "quarterCircle",
-      halfCircle: "halfCircle",
-      threeQuarterCircle: "threeQuarterCircle",
-      brace: "brace",
-      bracket: "bracket",
-      arrow: "arrow",
-      rightArrow: "rightArrow",
-      leftArrow: "leftArrow",
-      upArrow: "upArrow",
-      downArrow: "downArrow",
-      leftRightArrow: "leftRightArrow",
-      upDownArrow: "upDownArrow",
-      quadrilateralArrow: "quadrilateralArrow",
-      pentagon: "pentagon",
-      hexagon: "hexagon",
-      heptagon: "heptagon",
-      octagon: "octagon",
-      decagon: "decagon",
-      dodecagon: "dodecagon",
-      star4: "star4",
-      star5: "star5",
-      star6: "star6",
-      star7: "star7",
-      star8: "star8",
-      star10: "star10",
-      star12: "star12",
-      star16: "star16",
-      star24: "star24",
-      star32: "star32",
-      plus: "plus",
-      mathPlus: "mathPlus",
-      mathMinus: "mathMinus",
-      mathMultiply: "mathMultiply",
-      mathDivide: "mathDivide",
-      mathEqual: "mathEqual",
-      mathNotEqual: "mathNotEqual",
-      ribbon: "ribbon",
-      ribbon2: "ribbon2",
-      chevron: "chevron",
-      pentagonArrow: "pentagonArrow",
-      chord: "chord",
-      cloud: "cloud",
-      cloudCallout: "cloudCallout",
-      sun: "sun",
-      moon: "moon",
-      doubleWave: "doubleWave",
-      irregularSeal1: "irregularSeal1",
-      irregularSeal2: "irregularSeal2",
-      irregularSeal3: "irregularSeal3",
-      irregularSeal4: "irregularSeal4",
-      irregularSeal5: "irregularSeal5",
-      irregularSeal6: "irregularSeal6",
-      irregularSeal7: "irregularSeal7",
-      irregularSeal8: "irregularSeal8",
-      irregularSeal9: "irregularSeal9",
-      irregularSeal10: "irregularSeal10",
-      explosion: "explosion",
-      lightningBolt: "lightningBolt",
-      heart: "heart",
-      pictureFrame: "pictureFrame",
-      tetris: "tetris",
-      cube: "cube",
-      cylinder: "cylinder",
-      cylinderSolid: "cylinderSolid",
-      prism: "prism",
-      prismRight: "prismRight",
-      flowChartProcess: "flowChartProcess",
-      nonIsoscelesTrapezoid: "nonIsoscelesTrapezoid",
-      starBurst: "starBurst",
-      smileyFace: "smileyFace",
-      Donut: "donut",
-    };
-    return typeMap[type] || "rect";
+  private generateDrawingsRels(): string {
+    return DataRelationship.drawingsRels(
+      this._sheets.worksheets.map((w) => w.shapes),
+    );
   }
 
-  private colorToScheme(color: string): string {
-    const colorMap: Record<string, string> = {
-      "#4472c4": '<a:schemeClr val="accent1"/>',
-      "#ed7d31": '<a:schemeClr val="accent2"/>',
-      "#a5a5a5": '<a:schemeClr val="accent3"/>',
-      "#ffc000": '<a:schemeClr val="accent4"/>',
-      "#5b9bd5": '<a:schemeClr val="accent5"/>',
-      "#70ad47": '<a:schemeClr val="accent6"/>',
-    };
-    if (colorMap[color.toLowerCase()]) {
-      return colorMap[color.toLowerCase()];
-    }
-    return `<a:srgbClr val="${color.replace("#", "")}"/>`;
-  }
-
-  private schemeToColor(schemeColor: string): string {
-    const colorMap: Record<string, string> = {
-      accent1: "4472c4",
-      accent2: "ed7d31",
-      accent3: "a5a5a5",
-      accent4: "ffc000",
-      accent5: "5b9bd5",
-      accent6: "70ad47",
-    };
-    return colorMap[schemeColor] || schemeColor;
-  }
-
-  private shapeFillToXml(fill?: ShapeFill, fallbackColor?: string): string {
-    if (!fill) {
-      const color = this.colorToScheme(fallbackColor || "#ffffff");
-      return `<a:solidFill>${color}</a:solidFill>`;
-    }
-
-    if (fill.type === "none") {
-      return "";
-    }
-
-    if (fill.type === "solid" && fill.color) {
-      let colorXml: string;
-      if (fill.isSchemeColor) {
-        colorXml = `<a:schemeClr val="${fill.color}"/>`;
-      } else {
-        colorXml = this.colorToScheme(fill.color);
-      }
-      return `<a:solidFill>${colorXml}</a:solidFill>`;
-    }
-
-    if (
-      fill.type === "gradient" &&
-      fill.gradientStops &&
-      fill.gradientStops.length > 0
-    ) {
-      let gsLst = "";
-      for (const stop of fill.gradientStops) {
-        let colorXml: string;
-        if (stop.isSchemeColor) {
-          colorXml = `<a:schemeClr val="${stop.color}">`;
-          if (stop.lumMod !== undefined) {
-            colorXml += `<a:lumMod val="${stop.lumMod}"/>`;
-          }
-          if (stop.lumOff !== undefined) {
-            colorXml += `<a:lumOff val="${stop.lumOff}"/>`;
-          }
-          colorXml += `</a:schemeClr>`;
-        } else {
-          colorXml = `<a:srgbClr val="${stop.color.replace("#", "")}"/>`;
-        }
-        gsLst += `<a:gs pos="${stop.position}">${colorXml}</a:gs>`;
-      }
-      const angle = fill.gradientAngle || 0;
-      return `<a:gradFill><a:gsLst>${gsLst}</a:gsLst><a:lin ang="${angle}" scaled="1"/></a:gradFill>`;
-    }
-
-    const color = this.colorToScheme(fallbackColor || "#ffffff");
-    return `<a:solidFill>${color}</a:solidFill>`;
+  private generateDrawingXml(worksheet: Worksheet): string {
+    return ExpDrawing.generateDrawingXml(worksheet.shapes);
   }
 
   private generateRels(): string {

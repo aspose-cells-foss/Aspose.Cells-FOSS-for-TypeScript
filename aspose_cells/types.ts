@@ -220,6 +220,10 @@ export interface ShapeInfo {
   rotation?: number; // rotation in degrees (1/60000 degree units stored in Excel)
   hasArrowEnd?: boolean;
   isConnector?: boolean;
+  x?: number; // pre-calculated EMU position
+  y?: number;
+  width?: number;
+  height?: number;
 }
 
 export type ChartType =

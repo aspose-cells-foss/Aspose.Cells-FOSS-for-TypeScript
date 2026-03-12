@@ -44,7 +44,7 @@ export class HtmlExporter {
     await writeFile(join(htmlDir, "tabstrip.htm"), tabstripHtml);
 
     for (let i = 0; i < this.workbook.worksheets.length; i++) {
-      const sheet = this.workbook.worksheets.get(i);
+      const sheet = this.workbook.worksheets.get(i)!;
       const sheetHtml = this.generateSheetHtml(sheet, fileName, i === 0, i);
       await writeFile(
         join(htmlDir, `sheet${String(i + 1).padStart(3, "0")}.htm`),
