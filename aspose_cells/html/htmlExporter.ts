@@ -44,7 +44,7 @@ export class HtmlExporter {
     await writeFile(join(htmlDir, "tabstrip.htm"), tabstripHtml);
 
     for (let i = 0; i < this.workbook.worksheets.length; i++) {
-      const sheet = this.workbook.worksheets[i];
+      const sheet = this.workbook.worksheets.get(i);
       const sheetHtml = this.generateSheetHtml(sheet, fileName, i === 0, i);
       await writeFile(
         join(htmlDir, `sheet${String(i + 1).padStart(3, "0")}.htm`),
@@ -302,7 +302,7 @@ function fnSetActiveSheet(iSh)
   }
 
   private generateStylesheetCss(): string {
-    const styles = this.workbook.styles;
+    const styles = this.workbook.worksheets.styles;
     let css = `﻿tr
  {mso-height-source:auto;
  mso-ruby-visibility:none;}

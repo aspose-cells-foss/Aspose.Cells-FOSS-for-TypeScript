@@ -232,12 +232,12 @@ export class HtmlDocument {
     for (let i = 0; i < this._tables.length; i++) {
       const table = this._tables[i];
       const sheetName = this._sheetNames[i] || `Sheet${i + 1}`;
-      const worksheet = workbook.addWorksheet(sheetName);
+      const worksheet = workbook.worksheets.addWorksheet(sheetName);
       table.toWorksheet(worksheet, options);
     }
 
     if (this._tables.length === 0) {
-      workbook.addWorksheet("Sheet1");
+      workbook.worksheets.addWorksheet("Sheet1");
     }
 
     return workbook;

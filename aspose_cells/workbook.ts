@@ -59,20 +59,8 @@ export class Workbook {
     return workbook;
   }
 
-  get worksheets(): Worksheet[] {
-    return this._sheets.worksheets;
-  }
-
-  get worksheetCount(): number {
-    return this._sheets.worksheetCount;
-  }
-
-  get worksheet(): Worksheet {
-    return this._sheets.worksheet;
-  }
-
-  get styles(): Map<number, Style> {
-    return this._sheets.styles;
+  get worksheets(): WorksheetCollection {
+    return this._sheets;
   }
 
   get sharedStrings(): string[] {
@@ -117,7 +105,7 @@ export class Workbook {
     this._charts = await chartLoader.loadCharts(filePath);
 
     for (const chart of this._charts) {
-      const worksheet = this.worksheets[chart.sheetIndex];
+      const worksheet = this.worksheets.get(chart.sheetIndex);
       if (worksheet) {
         worksheet.addShape(chart);
       }
