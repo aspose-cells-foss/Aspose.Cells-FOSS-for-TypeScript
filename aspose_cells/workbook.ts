@@ -2,7 +2,14 @@ import { Worksheet } from "./worksheet";
 import { WorksheetCollection } from "./worksheetCollection";
 import { Cell } from "./cell";
 import { DOMParser } from "@xmldom/xmldom";
-import { CellValue, Style, SaveFormat, ShapeInfo, ShapeFill } from "./types";
+import {
+  CellValue,
+  Style,
+  SaveFormat,
+  ShapeInfo,
+  ShapeFill,
+  ChartInfo,
+} from "./types";
 import {
   openZip as openZipUtil,
   readZipEntry as readZipEntryUtil,
@@ -23,12 +30,14 @@ import {
   worksheetToHtml,
   workbookToHtmlFull,
 } from "./html/index";
+import { ChartLoader } from "./chartLoader";
 
 export class Workbook {
   private _sheets: WorksheetCollection;
   private _sharedStrings: string[] = [];
   private _protected = false;
   private _password?: string;
+  private _charts: ChartInfo[] = [];
 
   constructor() {
     this._sheets = new WorksheetCollection();
@@ -74,6 +83,10 @@ export class Workbook {
     return this._protected;
   }
 
+  get charts(): ChartInfo[] {
+    return this._charts;
+  }
+
   getNumFmt(numFmtId: string | null): string {
     return this._sheets.getNumFmt(numFmtId);
   }
@@ -98,6 +111,16 @@ export class Workbook {
       await this.loadSheets(zip);
     } finally {
       await zip.close();
+    }
+
+    const chartLoader = new ChartLoader();
+    this._charts = await chartLoader.loadCharts(filePath);
+
+    for (const chart of this._charts) {
+      const worksheet = this.worksheets[chart.sheetIndex];
+      if (worksheet) {
+        worksheet.addShape(chart);
+      }
     }
   }
 
@@ -340,12 +363,17 @@ export class Workbook {
 
       const sp = anchor.getElementsByTagName("xdr:sp")[0];
       const cxnSp = anchor.getElementsByTagName("xdr:cxnSp")[0];
+      const graphicFrame = anchor.getElementsByTagName("xdr:graphicFrame")[0];
+
+      if (graphicFrame) {
+        continue;
+      }
 
       let fill: ShapeFill | undefined;
-      
+
       if (sp || cxnSp) {
         const spPr = (sp || cxnSp)?.getElementsByTagName("xdr:spPr")[0];
-        
+
         if (spPr) {
           const xfrm = spPr.getElementsByTagName("a:xfrm")[0];
           if (xfrm) {
@@ -366,7 +394,7 @@ export class Workbook {
 
           const solidFill = spPr.getElementsByTagName("a:solidFill")[0];
           const gradFill = spPr.getElementsByTagName("a:gradFill")[0];
-          
+
           if (gradFill) {
             fill = this.parseGradFill(gradFill);
           } else if (solidFill) {
@@ -376,10 +404,11 @@ export class Workbook {
             if (style) {
               const fillRef = style.getElementsByTagName("a:fillRef")[0];
               if (fillRef) {
-                const schemeClr = fillRef.getElementsByTagName("a:schemeClr")[0];
+                const schemeClr =
+                  fillRef.getElementsByTagName("a:schemeClr")[0];
                 if (schemeClr) {
                   fill = {
-                    type: 'solid',
+                    type: "solid",
                     color: schemeClr.getAttribute("val") || "accent1",
                     isSchemeColor: true,
                   };
@@ -387,19 +416,19 @@ export class Workbook {
                   const srgbClr = fillRef.getElementsByTagName("a:srgbClr")[0];
                   if (srgbClr) {
                     fill = {
-                      type: 'solid',
+                      type: "solid",
                       color: "#" + (srgbClr.getAttribute("val") || "ffffff"),
                       isSchemeColor: false,
                     };
                   } else {
-                    fill = { type: 'none' };
+                    fill = { type: "none" };
                   }
                 }
               } else {
-                fill = { type: 'none' };
+                fill = { type: "none" };
               }
             } else {
-              fill = { type: 'none' };
+              fill = { type: "none" };
             }
           }
 
@@ -501,7 +530,7 @@ export class Workbook {
   private parseSolidFill(solidFill: Element): ShapeFill {
     const schemeClr = solidFill.getElementsByTagName("a:schemeClr")[0];
     const srgbClr = solidFill.getElementsByTagName("a:srgbClr")[0];
-    
+
     let color: string = "#ffffff";
     let isSchemeColor = false;
     if (schemeClr) {
@@ -510,9 +539,9 @@ export class Workbook {
     } else if (srgbClr) {
       color = "#" + (srgbClr.getAttribute("val") || "ffffff");
     }
-    
+
     return {
-      type: 'solid',
+      type: "solid",
       color,
       isSchemeColor,
     };
@@ -521,9 +550,15 @@ export class Workbook {
   private parseGradFill(gradFill: Element): ShapeFill {
     const gsLst = gradFill.getElementsByTagName("a:gsLst")[0];
     const lin = gradFill.getElementsByTagName("a:lin")[0];
-    
-    const gradientStops: Array<{ position: number; color: string; isSchemeColor?: boolean; lumMod?: number; lumOff?: number }> = [];
-    
+
+    const gradientStops: Array<{
+      position: number;
+      color: string;
+      isSchemeColor?: boolean;
+      lumMod?: number;
+      lumOff?: number;
+    }> = [];
+
     if (gsLst) {
       const gsElements = gsLst.getElementsByTagName("a:gs");
       for (let i = 0; i < gsElements.length; i++) {
@@ -531,12 +566,12 @@ export class Workbook {
         const pos = parseInt(gs.getAttribute("pos") || "0", 10);
         const schemeClr = gs.getElementsByTagName("a:schemeClr")[0];
         const srgbClr = gs.getElementsByTagName("a:srgbClr")[0];
-        
+
         let color: string;
         let isSchemeColor = false;
         let lumMod: number | undefined;
         let lumOff: number | undefined;
-        
+
         if (schemeClr) {
           color = schemeClr.getAttribute("val") || "accent1";
           isSchemeColor = true;
@@ -553,15 +588,23 @@ export class Workbook {
         } else {
           color = "#000000";
         }
-        
-        gradientStops.push({ position: pos, color, isSchemeColor, lumMod, lumOff });
+
+        gradientStops.push({
+          position: pos,
+          color,
+          isSchemeColor,
+          lumMod,
+          lumOff,
+        });
       }
     }
-    
-    const gradientAngle = lin ? parseInt(lin.getAttribute("ang") || "0", 10) : 0;
-    
+
+    const gradientAngle = lin
+      ? parseInt(lin.getAttribute("ang") || "0", 10)
+      : 0;
+
     return {
-      type: 'gradient',
+      type: "gradient",
       gradientStops,
       gradientAngle,
     };
@@ -796,13 +839,13 @@ export class Workbook {
   }
 
   private generateUniqueId(): string {
-    return '{' + this.generateGuid() + '}';
+    return "{" + this.generateGuid() + "}";
   }
 
   private generateGuid(): string {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
       const r = (Math.random() * 16) | 0;
-      const v = c === 'x' ? r : (r & 0x3) | 0x8;
+      const v = c === "x" ? r : (r & 0x3) | 0x8;
       return v.toString(16).toUpperCase();
     });
   }
@@ -813,17 +856,20 @@ export class Workbook {
     worksheet: Worksheet,
   ): string {
     const fromCol = shape.fromCol;
-    const fromColOff = shape.fromColOff;
+    const fromColOff = shape.fromColOff ?? 0;
     const fromRow = shape.fromRow;
-    const fromRowOff = shape.fromRowOff;
+    const fromRowOff = shape.fromRowOff ?? 0;
     const toCol = shape.toCol;
-    const toColOff = shape.toColOff;
+    const toColOff = shape.toColOff ?? 0;
     const toRow = shape.toRow;
-    const toRowOff = shape.toRowOff;
+    const toRowOff = shape.toRowOff ?? 0;
 
     const type = shape.type;
     const typeLower = type.toLowerCase();
-    const isConnector = shape.isConnector || typeLower === "line" || typeLower.includes("connector");
+    const isConnector =
+      shape.isConnector ||
+      typeLower === "line" ||
+      typeLower.includes("connector");
 
     const shapeType = this.getDrawingShapeType(type);
     const fillXml = this.shapeFillToXml(shape.fill, shape.fillColor);
@@ -836,15 +882,17 @@ export class Workbook {
     const cx = xEnd - x;
     const cy = yEnd - y;
 
-    const flipV =
-      typeLower === "line" ? ' flipV="1"' : "";
+    const flipV = typeLower === "line" ? ' flipV="1"' : "";
     const uniqueId = this.generateUniqueId();
     const extLst = `<a:extLst><a:ext uri="{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}"><a16:creationId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" id="${uniqueId}"/></a:ext></a:extLst>`;
 
     let anchor = `<xdr:twoCellAnchor><xdr:from><xdr:col>${fromCol}</xdr:col><xdr:colOff>${fromColOff}</xdr:colOff><xdr:row>${fromRow}</xdr:row><xdr:rowOff>${fromRowOff}</xdr:rowOff></xdr:from><xdr:to><xdr:col>${toCol}</xdr:col><xdr:colOff>${toColOff}</xdr:colOff><xdr:row>${toRow}</xdr:row><xdr:rowOff>${toRowOff}</xdr:rowOff></xdr:to>`;
 
-    const tailEnd = shape.hasArrowEnd ? "<a:ln><a:tailEnd type=\"triangle\"/></a:ln>" : "";
-    const lnStyle = lineWidth && lineWidth !== 12700 ? `<a:ln w="${lineWidth}"/>` : "";
+    const tailEnd = shape.hasArrowEnd
+      ? '<a:ln><a:tailEnd type="triangle"/></a:ln>'
+      : "";
+    const lnStyle =
+      lineWidth && lineWidth !== 12700 ? `<a:ln w="${lineWidth}"/>` : "";
 
     if (isConnector) {
       anchor += `<xdr:cxnSp macro=""><xdr:nvCxnSpPr><xdr:cNvPr id="${index + 3}" name="${escapeXml(shape.name)}">${extLst}</xdr:cNvPr><xdr:cNvCxnSpPr/></xdr:nvCxnSpPr><xdr:spPr><a:xfrm${flipV}><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="${shapeType}"><a:avLst/></a:prstGeom>${lnStyle}${tailEnd}</xdr:spPr><xdr:style>`;
@@ -998,7 +1046,7 @@ export class Workbook {
       nonIsoscelesTrapezoid: "nonIsoscelesTrapezoid",
       starBurst: "starBurst",
       smileyFace: "smileyFace",
-     Donut: "donut",
+      Donut: "donut",
     };
     return typeMap[type] || "rect";
   }
@@ -1036,11 +1084,11 @@ export class Workbook {
       return `<a:solidFill>${color}</a:solidFill>`;
     }
 
-    if (fill.type === 'none') {
-      return '';
+    if (fill.type === "none") {
+      return "";
     }
 
-    if (fill.type === 'solid' && fill.color) {
+    if (fill.type === "solid" && fill.color) {
       let colorXml: string;
       if (fill.isSchemeColor) {
         colorXml = `<a:schemeClr val="${fill.color}"/>`;
@@ -1050,8 +1098,12 @@ export class Workbook {
       return `<a:solidFill>${colorXml}</a:solidFill>`;
     }
 
-    if (fill.type === 'gradient' && fill.gradientStops && fill.gradientStops.length > 0) {
-      let gsLst = '';
+    if (
+      fill.type === "gradient" &&
+      fill.gradientStops &&
+      fill.gradientStops.length > 0
+    ) {
+      let gsLst = "";
       for (const stop of fill.gradientStops) {
         let colorXml: string;
         if (stop.isSchemeColor) {
@@ -1064,7 +1116,7 @@ export class Workbook {
           }
           colorXml += `</a:schemeClr>`;
         } else {
-          colorXml = `<a:srgbClr val="${stop.color.replace('#', '')}"/>`;
+          colorXml = `<a:srgbClr val="${stop.color.replace("#", "")}"/>`;
         }
         gsLst += `<a:gs pos="${stop.position}">${colorXml}</a:gs>`;
       }

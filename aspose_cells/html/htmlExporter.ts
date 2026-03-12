@@ -1,15 +1,18 @@
 import { Workbook } from "../workbook";
 import { Worksheet } from "../worksheet";
 import { join } from "path";
-import type { ShapeInfo } from "../types";
+import type { ShapeInfo, ChartInfo } from "../types";
+import { ChartRenderer } from "./chartRenderer";
 
 const EMU_PER_PIXEL = 914400 / 96;
 
 export class HtmlExporter {
   private workbook: Workbook;
+  private chartRenderer: ChartRenderer;
 
   constructor(workbook: Workbook) {
     this.workbook = workbook;
+    this.chartRenderer = new ChartRenderer();
   }
 
   async saveAsHtmlFrameset(
@@ -42,7 +45,7 @@ export class HtmlExporter {
 
     for (let i = 0; i < this.workbook.worksheets.length; i++) {
       const sheet = this.workbook.worksheets[i];
-      const sheetHtml = this.generateSheetHtml(sheet, fileName, i === 0);
+      const sheetHtml = this.generateSheetHtml(sheet, fileName, i === 0, i);
       await writeFile(
         join(htmlDir, `sheet${String(i + 1).padStart(3, "0")}.htm`),
         sheetHtml,
@@ -502,6 +505,7 @@ A {
     worksheet: Worksheet,
     mainFileName: string,
     isFirst: boolean,
+    sheetIndex: number,
   ): string {
     const tableHtml = this.worksheetToHtmlForExcel(worksheet);
 
@@ -530,7 +534,7 @@ x\:* {behavior:url(#default#VML);}
 <style type="text/css">
 <!--table
  {mso-displayed-decimal-separator:"\.";
- mso-displayed-thousand-separator:"\,";}
+ mso-displayed-thousand-separator:",";}
 @page
  {
  mso-header-data:"";
@@ -670,6 +674,7 @@ ${tableHtml}
               shape,
               columnWidths,
               rowHeights,
+              worksheet,
             );
           }
 
@@ -699,24 +704,35 @@ ${tableHtml}
     shape: ShapeInfo,
     columnWidths: number[],
     rowHeights: number[],
+    worksheet: Worksheet,
   ): string {
+    if ("chartType" in shape) {
+      return this.chartRenderer.renderChart(shape as ChartInfo, worksheet);
+    }
+
     let classCounter = 0;
-    const getClassName = () => `p${shape.name.replace(/\s/g, "_")}_${classCounter++}`;
-    
-    let left = shape.fromColOff / EMU_PER_PIXEL;
-    let top = shape.fromRowOff / EMU_PER_PIXEL;
+    const getClassName = () =>
+      `p${shape.name.replace(/\s/g, "_")}_${classCounter++}`;
+
+    const fromColOff = shape.fromColOff ?? 0;
+    const fromRowOff = shape.fromRowOff ?? 0;
+    const toColOff = shape.toColOff ?? 0;
+    const toRowOff = shape.toRowOff ?? 0;
+
+    let left = fromColOff / EMU_PER_PIXEL;
+    let top = fromRowOff / EMU_PER_PIXEL;
 
     let right = 0;
     for (let col = shape.fromCol; col < shape.toCol; col++) {
       right += columnWidths[col] || 64;
     }
-    right += shape.toColOff / EMU_PER_PIXEL;
+    right += toColOff / EMU_PER_PIXEL;
 
     let bottom = 0;
     for (let row = shape.fromRow; row < shape.toRow; row++) {
       bottom += rowHeights[row] || 16;
     }
-    bottom += shape.toRowOff / EMU_PER_PIXEL;
+    bottom += toRowOff / EMU_PER_PIXEL;
 
     const width = right - left;
     const height = bottom - top;
@@ -733,28 +749,30 @@ ${tableHtml}
     let fillColor = "#ffffff";
     let hasFill = false;
     let gradientDefs = "";
-    if (shape.fill && shape.fill.type !== 'none') {
+    if (shape.fill && shape.fill.type !== "none") {
       hasFill = true;
-      if (shape.fill.type === 'solid' && shape.fill.color) {
+      if (shape.fill.type === "solid" && shape.fill.color) {
         if (shape.fill.isSchemeColor && schemeColorMap[shape.fill.color]) {
           fillColor = schemeColorMap[shape.fill.color];
-        } else if (shape.fill.color.startsWith('#')) {
+        } else if (shape.fill.color.startsWith("#")) {
           fillColor = shape.fill.color.toUpperCase();
         } else if (schemeColorMap[shape.fill.color]) {
           fillColor = schemeColorMap[shape.fill.color];
         } else {
           fillColor = shape.fill.color;
         }
-      } else if (shape.fill.type === 'gradient' && shape.fill.gradientStops) {
+      } else if (shape.fill.type === "gradient" && shape.fill.gradientStops) {
         const gradientId = `grad_${shape.name.replace(/\s/g, "_")}`;
-        const angle = shape.fill.gradientAngle ? shape.fill.gradientAngle / 10000 : 0;
+        const angle = shape.fill.gradientAngle
+          ? shape.fill.gradientAngle / 10000
+          : 0;
         let gradientStopsXml = "";
         for (const stop of shape.fill.gradientStops) {
           let stopColor = stop.color;
           if (stop.isSchemeColor && schemeColorMap[stop.color]) {
             stopColor = schemeColorMap[stop.color];
-          } else if (!stop.color.startsWith('#')) {
-            stopColor = (schemeColorMap[stop.color] || stop.color);
+          } else if (!stop.color.startsWith("#")) {
+            stopColor = schemeColorMap[stop.color] || stop.color;
           }
           gradientStopsXml += `<stop offset="${stop.position / 1000}" stop-color="${stopColor.toUpperCase()}" stop-opacity="1" />`;
         }
@@ -764,11 +782,15 @@ ${tableHtml}
    </linearGradient>`;
         fillColor = `url(#${gradientId})`;
       }
-    } else if (shape.fillColor && shape.fillColor !== "#ffffff" && shape.fillColor !== "white") {
+    } else if (
+      shape.fillColor &&
+      shape.fillColor !== "#ffffff" &&
+      shape.fillColor !== "white"
+    ) {
       hasFill = true;
       fillColor = shape.fillColor.toUpperCase();
     }
-    
+
     const strokeColor = shape.lineColor || "#000000";
 
     const type = shape.type.toLowerCase();
@@ -780,43 +802,43 @@ ${tableHtml}
     let fillPath = "";
     let strokePath = "";
     let transform = "";
-    
+
     const scale = 1.33333;
     const px = 0.5;
     const py = 0.5;
     const pw = width / scale - 0.5;
     const ph = height / scale - 0.5;
 
-    const rotationRad = (shape.rotation || 0) * Math.PI / 180;
+    const rotationRad = ((shape.rotation || 0) * Math.PI) / 180;
     const cosR = Math.cos(rotationRad);
     const sinR = Math.sin(rotationRad);
-    
+
     if (shape.rotation && shape.rotation !== 0) {
-      const cx = (width / scale) / 2;
-      const cy = (height / scale) / 2;
+      const cx = width / scale / 2;
+      const cy = height / scale / 2;
       transform = `matrix(${cosR},${sinR},${-sinR},${cosR},${cy * sinR + cx - cx * cosR},${cy - cx * sinR - cy * cosR})`;
     } else if (shape.flipV) {
       transform = `matrix(1,0,0,-1,0,${height / EMU_PER_PIXEL})`;
     } else if (shape.flipH) {
       transform = `matrix(-1,0,0,1,${width / EMU_PER_PIXEL},0)`;
     }
-    
+
     if (isLine) {
       const className = getClassName();
       strokePath = `<path d="M${left / scale},${top / scale} L${right / scale},${bottom / scale} " class="${className}" fill="none" transform="matrix(1,0,0,1,-0.000007629,-0.000007629)" />`;
-      
+
       if (shape.hasArrowEnd) {
         const dx = right - left;
         const dy = bottom - top;
         const angle = Math.atan2(dy, dx);
         const arrowSize = 8;
         const arrowAngle = Math.PI / 6;
-        
+
         const ax1 = right - arrowSize * Math.cos(angle - arrowAngle);
         const ay1 = bottom - arrowSize * Math.sin(angle - arrowAngle);
         const ax2 = right - arrowSize * Math.cos(angle + arrowAngle);
         const ay2 = bottom - arrowSize * Math.sin(angle + arrowAngle);
-        
+
         const arrowPath = `M${right / scale},${bottom / scale} L${ax1 / scale},${ay1 / scale} L${ax2 / scale},${ay2 / scale} Z`;
         fillPath = `<path d="${arrowPath}" fill="${strokeColor}" transform="matrix(1,0,0,1,-0.000007629,-0.000007629)" />`;
       }
@@ -826,9 +848,11 @@ ${tableHtml}
       const rx = pw / 2;
       const ry = ph / 2;
       const ellipsePath = `M${cx},${cy - ry} C${cx + rx},${cy - ry} ${cx + rx},${cy + ry} ${cx},${cy + ry} C${cx - rx},${cy + ry} ${cx - rx},${cy - ry} ${cx},${cy - ry} Z`;
-      fillPath = hasFill ? `<path d="${ellipsePath}" fill="${fillColor}"${transform ? ` transform="${transform}"` : ''} />` : '';
+      fillPath = hasFill
+        ? `<path d="${ellipsePath}" fill="${fillColor}"${transform ? ` transform="${transform}"` : ""} />`
+        : "";
       const className = getClassName();
-      strokePath = `<path d="${ellipsePath}" class="${className}" fill="none"${transform ? ` transform="${transform}"` : ''} />`;
+      strokePath = `<path d="${ellipsePath}" class="${className}" fill="none"${transform ? ` transform="${transform}"` : ""} />`;
     } else if (type === "triangle" || type === "rightTriangle") {
       let pathD: string;
       if (type === "rightTriangle") {
@@ -836,23 +860,30 @@ ${tableHtml}
       } else {
         pathD = `M${px + pw / 2},${py} L${px},${py + ph} L${px + pw},${py + ph} Z`;
       }
-      fillPath = hasFill ? `<path d="${pathD} " fill="${fillColor}"${transform ? ` transform="${transform}"` : ''} />` : '';
+      fillPath = hasFill
+        ? `<path d="${pathD} " fill="${fillColor}"${transform ? ` transform="${transform}"` : ""} />`
+        : "";
       const className = getClassName();
-      strokePath = `<path d="${pathD} " class="${className}" fill="none"${transform ? ` transform="${transform}"` : ''} />`;
+      strokePath = `<path d="${pathD} " class="${className}" fill="none"${transform ? ` transform="${transform}"` : ""} />`;
     } else if (type === "diamond") {
       const pathD = `M${px + pw / 2},${py} L${px + pw},${py + ph / 2} L${px + pw / 2},${py + ph} L${px},${py + ph / 2} Z`;
-      fillPath = hasFill ? `<path d="${pathD} " fill="${fillColor}"${transform ? ` transform="${transform}"` : ''} />` : '';
+      fillPath = hasFill
+        ? `<path d="${pathD} " fill="${fillColor}"${transform ? ` transform="${transform}"` : ""} />`
+        : "";
       const className = getClassName();
-      strokePath = `<path d="${pathD} " class="${className}" fill="none"${transform ? ` transform="${transform}"` : ''} />`;
+      strokePath = `<path d="${pathD} " class="${className}" fill="none"${transform ? ` transform="${transform}"` : ""} />`;
     } else {
       const pathD = `M${px},${py} L${px + pw},${py} L${px + pw},${py + ph} L${px},${py + ph} Z`;
-      fillPath = hasFill ? `<path d="${pathD} " fill="${fillColor}"${transform ? ` transform="${transform}"` : ''} />` : '';
+      fillPath = hasFill
+        ? `<path d="${pathD} " fill="${fillColor}"${transform ? ` transform="${transform}"` : ""} />`
+        : "";
       const className = getClassName();
-      strokePath = `<path d="${pathD} " class="${className}" fill="none"${transform ? ` transform="${transform}"` : ''} />`;
+      strokePath = `<path d="${pathD} " class="${className}" fill="none"${transform ? ` transform="${transform}"` : ""} />`;
     }
 
     const strokeClassName = strokePath.match(/class="([^"]+)"/)?.[1] || "";
-    const styleBlock = strokeClassName ? `
+    const styleBlock = strokeClassName
+      ? `
    <style type="text/css">
     <![CDATA[
     
@@ -865,7 +896,8 @@ stroke-linecap:butt;
 stroke-linejoin:miter;
 }
 
-    ]]></style>` : "";
+    ]]></style>`
+      : "";
 
     const svgContent = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${svgWidth}" height="${svgHeight}">
@@ -875,10 +907,14 @@ stroke-linejoin:miter;
    <rect width="100%" height="100%" fill="white" />
    <g>
     <g>
-     <g>${fillPath ? `
-      ${fillPath}` : ''}
+     <g>${
+       fillPath
+         ? `
+      ${fillPath}`
+         : ""
+     }
       <g />
-${strokePath ? `      ${strokePath}` : ''}
+${strokePath ? `      ${strokePath}` : ""}
      </g>
      </g>
     </g>
@@ -919,29 +955,34 @@ ${strokePath ? `      ${strokePath}` : ''}
     let maxY = 0;
 
     const processedShapes = shapes.map((shape) => {
+      const fromColOff = shape.fromColOff ?? 0;
+      const fromRowOff = shape.fromRowOff ?? 0;
+      const toColOff = shape.toColOff ?? 0;
+      const toRowOff = shape.toRowOff ?? 0;
+
       let left = 0;
       for (let col = 0; col < shape.fromCol; col++) {
         left += columnWidths[col] || 64;
       }
-      left += shape.fromColOff / EMU_PER_PIXEL;
+      left += fromColOff / EMU_PER_PIXEL;
 
       let top = 0;
       for (let row = 0; row < shape.fromRow; row++) {
         top += rowHeights[row] || 16;
       }
-      top += shape.fromRowOff / EMU_PER_PIXEL;
+      top += fromRowOff / EMU_PER_PIXEL;
 
       let right = 0;
       for (let col = 0; col < shape.toCol; col++) {
         right += columnWidths[col] || 64;
       }
-      right += shape.toColOff / EMU_PER_PIXEL;
+      right += toColOff / EMU_PER_PIXEL;
 
       let bottom = 0;
       for (let row = 0; row < shape.toRow; row++) {
         bottom += rowHeights[row] || 16;
       }
-      bottom += shape.toRowOff / EMU_PER_PIXEL;
+      bottom += toRowOff / EMU_PER_PIXEL;
 
       if (right > maxX) maxX = right;
       if (bottom > maxY) maxY = bottom;
@@ -976,8 +1017,9 @@ ${shapesSvg}
     bottom: number,
   ): string {
     let classCounter = 0;
-    const getClassName = () => `p${shape.name.replace(/\s/g, "_")}_${classCounter++}`;
-    
+    const getClassName = () =>
+      `p${shape.name.replace(/\s/g, "_")}_${classCounter++}`;
+
     const width = right - x;
     const height = bottom - y;
 
@@ -993,27 +1035,29 @@ ${shapesSvg}
     let fillColor = "white";
     let hasFill = false;
     let gradientDefs = "";
-    if (shape.fill && shape.fill.type !== 'none') {
+    if (shape.fill && shape.fill.type !== "none") {
       hasFill = true;
-      if (shape.fill.type === 'solid' && shape.fill.color) {
+      if (shape.fill.type === "solid" && shape.fill.color) {
         if (shape.fill.isSchemeColor && schemeColorMap[shape.fill.color]) {
           fillColor = schemeColorMap[shape.fill.color];
-        } else if (shape.fill.color.startsWith('#')) {
+        } else if (shape.fill.color.startsWith("#")) {
           fillColor = shape.fill.color.toUpperCase();
         } else if (schemeColorMap[shape.fill.color]) {
           fillColor = schemeColorMap[shape.fill.color];
         } else {
           fillColor = shape.fill.color.toUpperCase();
         }
-      } else if (shape.fill.type === 'gradient' && shape.fill.gradientStops) {
+      } else if (shape.fill.type === "gradient" && shape.fill.gradientStops) {
         const gradientId = `grad_${shape.name.replace(/\s/g, "_")}`;
-        const angle = shape.fill.gradientAngle ? shape.fill.gradientAngle / 10000 : 0;
+        const angle = shape.fill.gradientAngle
+          ? shape.fill.gradientAngle / 10000
+          : 0;
         let gradientStopsXml = "";
         for (const stop of shape.fill.gradientStops) {
           let stopColor = stop.color;
           if (stop.isSchemeColor && schemeColorMap[stop.color]) {
             stopColor = schemeColorMap[stop.color];
-          } else if (!stop.color.startsWith('#')) {
+          } else if (!stop.color.startsWith("#")) {
             stopColor = schemeColorMap[stop.color] || stop.color;
           }
           gradientStopsXml += `<stop offset="${stop.position / 1000}" stop-color="${stopColor}" stop-opacity="1" />`;
@@ -1024,32 +1068,36 @@ ${shapesSvg}
   </linearGradient>`;
         fillColor = `url(#${gradientId})`;
       }
-    } else if (shape.fillColor && shape.fillColor !== "#ffffff" && shape.fillColor !== "white") {
+    } else if (
+      shape.fillColor &&
+      shape.fillColor !== "#ffffff" &&
+      shape.fillColor !== "white"
+    ) {
       hasFill = true;
       fillColor = shape.fillColor;
     }
-    
+
     const strokeColor = shape.lineColor || "#000000";
 
     const type = shape.type.toLowerCase();
     const isLine = type === "line" || type.includes("connector");
 
-    const svgWidth = (width).toFixed(2) + "pt";
-    const svgHeight = (height).toFixed(2) + "pt";
+    const svgWidth = width.toFixed(2) + "pt";
+    const svgHeight = height.toFixed(2) + "pt";
 
     let fillPath = "";
     let strokePath = "";
     let transform = "";
-    
+
     const px = 0.5;
     const py = 0.5;
     const pw = width - 0.5;
     const ph = height - 0.5;
 
-    const rotationRad = (shape.rotation || 0) * Math.PI / 180;
+    const rotationRad = ((shape.rotation || 0) * Math.PI) / 180;
     const cosR = Math.cos(rotationRad);
     const sinR = Math.sin(rotationRad);
-    
+
     if (shape.rotation && shape.rotation !== 0) {
       const cx = width / 2;
       const cy = height / 2;
@@ -1059,23 +1107,23 @@ ${shapesSvg}
     } else if (shape.flipH) {
       transform = `matrix(-1,0,0,1,${width},0)`;
     }
-    
+
     if (isLine) {
       const className = getClassName();
       strokePath = `<path d="M${x},${y} L${right},${bottom} " class="${className}" fill="none" transform="matrix(1,0,0,1,-0.000007629,-0.000007629)" />`;
-      
+
       if (shape.hasArrowEnd) {
         const dx = right - x;
         const dy = bottom - y;
         const angle = Math.atan2(dy, dx);
         const arrowSize = 8;
         const arrowAngle = Math.PI / 6;
-        
+
         const ax1 = right - arrowSize * Math.cos(angle - arrowAngle);
         const ay1 = bottom - arrowSize * Math.sin(angle - arrowAngle);
         const ax2 = right - arrowSize * Math.cos(angle + arrowAngle);
         const ay2 = bottom - arrowSize * Math.sin(angle + arrowAngle);
-        
+
         const arrowPath = `M${right},${bottom} L${ax1},${ay1} L${ax2},${ay2} Z`;
         fillPath = `<path d="${arrowPath}" fill="${strokeColor}" transform="matrix(1,0,0,1,-0.000007629,-0.000007629)" />`;
       }
@@ -1085,9 +1133,11 @@ ${shapesSvg}
       const rx = pw / 2;
       const ry = ph / 2;
       const ellipsePath = `M${cx},${cy - ry} C${cx + rx},${cy - ry} ${cx + rx},${cy + ry} ${cx},${cy + ry} C${cx - rx},${cy + ry} ${cx - rx},${cy - ry} ${cx},${cy - ry} Z`;
-      fillPath = hasFill ? `<path d="${ellipsePath}" fill="${fillColor}"${transform ? ` transform="${transform}"` : ''} />` : '';
+      fillPath = hasFill
+        ? `<path d="${ellipsePath}" fill="${fillColor}"${transform ? ` transform="${transform}"` : ""} />`
+        : "";
       const className = getClassName();
-      strokePath = `<path d="${ellipsePath}" class="${className}" fill="none"${transform ? ` transform="${transform}"` : ''} />`;
+      strokePath = `<path d="${ellipsePath}" class="${className}" fill="none"${transform ? ` transform="${transform}"` : ""} />`;
     } else if (type === "triangle" || type === "rightTriangle") {
       let pathD: string;
       if (type === "rightTriangle") {
@@ -1095,23 +1145,30 @@ ${shapesSvg}
       } else {
         pathD = `M${px + pw / 2},${py} L${px},${py + ph} L${px + pw},${py + ph} Z`;
       }
-      fillPath = hasFill ? `<path d="${pathD} " fill="${fillColor}"${transform ? ` transform="${transform}"` : ''} />` : '';
+      fillPath = hasFill
+        ? `<path d="${pathD} " fill="${fillColor}"${transform ? ` transform="${transform}"` : ""} />`
+        : "";
       const className = getClassName();
-      strokePath = `<path d="${pathD} " class="${className}" fill="none"${transform ? ` transform="${transform}"` : ''} />`;
+      strokePath = `<path d="${pathD} " class="${className}" fill="none"${transform ? ` transform="${transform}"` : ""} />`;
     } else if (type === "diamond") {
       const pathD = `M${px + pw / 2},${py} L${px + pw},${py + ph / 2} L${px + pw / 2},${py + ph} L${px},${py + ph / 2} Z`;
-      fillPath = hasFill ? `<path d="${pathD} " fill="${fillColor}"${transform ? ` transform="${transform}"` : ''} />` : '';
+      fillPath = hasFill
+        ? `<path d="${pathD} " fill="${fillColor}"${transform ? ` transform="${transform}"` : ""} />`
+        : "";
       const className = getClassName();
-      strokePath = `<path d="${pathD} " class="${className}" fill="none"${transform ? ` transform="${transform}"` : ''} />`;
+      strokePath = `<path d="${pathD} " class="${className}" fill="none"${transform ? ` transform="${transform}"` : ""} />`;
     } else {
       const pathD = `M${px},${py} L${px + pw},${py} L${px + pw},${py + ph} L${px},${py + ph} Z`;
-      fillPath = hasFill ? `<path d="${pathD} " fill="${fillColor}"${transform ? ` transform="${transform}"` : ''} />` : '';
+      fillPath = hasFill
+        ? `<path d="${pathD} " fill="${fillColor}"${transform ? ` transform="${transform}"` : ""} />`
+        : "";
       const className = getClassName();
-      strokePath = `<path d="${pathD} " class="${className}" fill="none"${transform ? ` transform="${transform}"` : ''} />`;
+      strokePath = `<path d="${pathD} " class="${className}" fill="none"${transform ? ` transform="${transform}"` : ""} />`;
     }
 
     const strokeClassName = strokePath.match(/class="([^"]+)"/)?.[1] || "";
-    const styleBlock = strokeClassName ? `
+    const styleBlock = strokeClassName
+      ? `
   <defs>
    <style type="text/css">
     <![CDATA[
@@ -1126,7 +1183,8 @@ stroke-linejoin:miter;
 }
 
     ]]></style>
-  </defs>` : "";
+  </defs>`
+      : "";
 
     return `  <g id="SFixTitle" />
   <g id="SContent">

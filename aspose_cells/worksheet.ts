@@ -7,6 +7,7 @@ import type {
   Hyperlink,
   ConditionalFormatRule,
   ShapeInfo,
+  ChartInfo,
 } from "./types";
 import { cellRef, parseCellRef, parseRange } from "./util";
 
@@ -194,6 +195,10 @@ export class Worksheet {
 
   get shapes(): ShapeInfo[] {
     return this._shapes;
+  }
+
+  get charts(): ChartInfo[] {
+    return this._shapes.filter((s): s is ChartInfo => "chartType" in s);
   }
 
   toXml(drawingIndex: number = 0): string {

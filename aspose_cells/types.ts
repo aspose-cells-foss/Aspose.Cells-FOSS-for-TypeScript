@@ -187,7 +187,7 @@ export enum EncryptionType {
 }
 
 export interface ShapeFill {
-  type: 'solid' | 'gradient' | 'none';
+  type: "solid" | "gradient" | "none";
   color?: string; // hex color or scheme color name (e.g., "accent1" or "#4472c4")
   isSchemeColor?: boolean; // if true, color is a scheme color name
   gradientStops?: Array<{
@@ -204,13 +204,13 @@ export interface ShapeInfo {
   name: string;
   type: string; // 'line','rect','ellipse','triangle','straightConnector1','bentConnector3', etc.
   fromCol: number;
-  fromColOff: number; // EMU
+  fromColOff?: number; // EMU
   fromRow: number;
-  fromRowOff: number; // EMU
+  fromRowOff?: number; // EMU
   toCol: number;
-  toColOff: number;
+  toColOff?: number;
   toRow: number;
-  toRowOff: number;
+  toRowOff?: number;
   fill?: ShapeFill;
   fillColor?: string; // resolved hex color (legacy)
   lineColor?: string;
@@ -220,4 +220,39 @@ export interface ShapeInfo {
   rotation?: number; // rotation in degrees (1/60000 degree units stored in Excel)
   hasArrowEnd?: boolean;
   isConnector?: boolean;
+}
+
+export type ChartType =
+  | "bar"
+  | "barStacked"
+  | "barStacked100"
+  | "column"
+  | "columnStacked"
+  | "columnStacked100"
+  | "line"
+  | "lineStacked"
+  | "lineStacked100"
+  | "pie"
+  | "doughnut"
+  | "area"
+  | "areaStacked"
+  | "areaStacked100"
+  | "scatter"
+  | "radar";
+
+export interface ChartSeries {
+  name?: string;
+  values: number[];
+  categories?: string[];
+}
+
+export interface ChartInfo extends ShapeInfo {
+  chartType: ChartType;
+  title?: string;
+  series: ChartSeries[];
+  fromRowOff?: number;
+  fromColOff?: number;
+  toRowOff?: number;
+  toColOff?: number;
+  sheetIndex: number;
 }
