@@ -338,8 +338,11 @@ export class Workbook {
       const sp = anchor.getElementsByTagName("xdr:sp")[0];
       const cxnSp = anchor.getElementsByTagName("xdr:cxnSp")[0];
 
+      let fill: ShapeFill | undefined;
+      
       if (sp || cxnSp) {
         const spPr = (sp || cxnSp)?.getElementsByTagName("xdr:spPr")[0];
+        
         if (spPr) {
           const prstGeom = spPr.getElementsByTagName("a:prstGeom")[0];
           if (prstGeom) {
@@ -347,14 +350,14 @@ export class Workbook {
           }
 
           const solidFill = spPr.getElementsByTagName("a:solidFill")[0];
-          if (solidFill) {
-            const schemeClr = solidFill.getElementsByTagName("a:schemeClr")[0];
-            const srgbClr = solidFill.getElementsByTagName("a:srgbClr")[0];
-            if (schemeClr) {
-              fillColor = this.parseSchemeColor(schemeClr);
-            } else if (srgbClr) {
-              fillColor = "#" + (srgbClr.getAttribute("val") || "ffffff");
-            }
+          const gradFill = spPr.getElementsByTagName("a:gradFill")[0];
+          
+          if (gradFill) {
+            fill = this.parseGradFill(gradFill);
+          } else if (solidFill) {
+            fill = this.parseSolidFill(solidFill);
+          } else {
+            fill = { type: 'none' };
           }
 
           const ln = spPr.getElementsByTagName("a:ln")[0];
@@ -394,6 +397,7 @@ export class Workbook {
         toColOff,
         toRow,
         toRowOff,
+        fill,
         fillColor,
         lineColor,
         lineWidth,
@@ -446,6 +450,75 @@ export class Workbook {
     }
 
     return "#" + color;
+  }
+
+  private parseSolidFill(solidFill: Element): ShapeFill {
+    const schemeClr = solidFill.getElementsByTagName("a:schemeClr")[0];
+    const srgbClr = solidFill.getElementsByTagName("a:srgbClr")[0];
+    
+    let color: string | undefined;
+    let isSchemeColor = false;
+    if (schemeClr) {
+      color = schemeClr.getAttribute("val") || "accent1"; // Keep scheme name
+      isSchemeColor = true;
+    } else if (srgbClr) {
+      color = "#" + (srgbClr.getAttribute("val") || "ffffff");
+    }
+    
+    return {
+      type: 'solid',
+      color,
+      isSchemeColor,
+    };
+  }
+
+  private parseGradFill(gradFill: Element): ShapeFill {
+    const gsLst = gradFill.getElementsByTagName("a:gsLst")[0];
+    const lin = gradFill.getElementsByTagName("a:lin")[0];
+    
+    const gradientStops: Array<{ position: number; color: string; isSchemeColor?: boolean; lumMod?: number; lumOff?: number }> = [];
+    
+    if (gsLst) {
+      const gsElements = gsLst.getElementsByTagName("a:gs");
+      for (let i = 0; i < gsElements.length; i++) {
+        const gs = gsElements[i];
+        const pos = parseInt(gs.getAttribute("pos") || "0", 10);
+        const schemeClr = gs.getElementsByTagName("a:schemeClr")[0];
+        const srgbClr = gs.getElementsByTagName("a:srgbClr")[0];
+        
+        let color: string;
+        let isSchemeColor = false;
+        let lumMod: number | undefined;
+        let lumOff: number | undefined;
+        
+        if (schemeClr) {
+          color = schemeClr.getAttribute("val") || "accent1";
+          isSchemeColor = true;
+          const lumModEl = schemeClr.getElementsByTagName("a:lumMod")[0];
+          const lumOffEl = schemeClr.getElementsByTagName("a:lumOff")[0];
+          if (lumModEl) {
+            lumMod = parseInt(lumModEl.getAttribute("val") || "0", 10);
+          }
+          if (lumOffEl) {
+            lumOff = parseInt(lumOffEl.getAttribute("val") || "0", 10);
+          }
+        } else if (srgbClr) {
+          color = "#" + (srgbClr.getAttribute("val") || "ffffff");
+        } else {
+          color = "#000000";
+        }
+        
+        gradientStops.push({ position: pos, color, isSchemeColor, lumMod, lumOff });
+      }
+    }
+    
+    const gradientAngle = lin ? parseInt(lin.getAttribute("ang") || "0", 10) : 0;
+    
+    return {
+      type: 'gradient',
+      gradientStops,
+      gradientAngle,
+    };
   }
 
   private async loadWorksheetData(
@@ -707,7 +780,7 @@ export class Workbook {
     const isConnector = shape.isConnector || typeLower === "line" || typeLower.includes("connector");
 
     const shapeType = this.getDrawingShapeType(type);
-    const fillColor = this.colorToScheme(shape.fillColor || "#ffffff");
+    const fillXml = this.shapeFillToXml(shape.fill, shape.fillColor);
     const lineWidth = shape.lineWidth || 12700;
 
     const x = this.getColumnPositionEMU(worksheet, fromCol) + fromColOff;
@@ -718,7 +791,7 @@ export class Workbook {
     const cy = yEnd - y;
 
     const flipV =
-      typeLower === "line" || typeLower.includes("connector") ? ' flipV="1"' : "";
+      typeLower === "line" ? ' flipV="1"' : "";
     const uniqueId = this.generateUniqueId();
     const extLst = `<a:extLst><a:ext uri="{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}"><a16:creationId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" id="${uniqueId}"/></a:ext></a:extLst>`;
 
@@ -730,7 +803,7 @@ export class Workbook {
     if (isConnector) {
       anchor += `<xdr:cxnSp macro=""><xdr:nvCxnSpPr><xdr:cNvPr id="${index + 3}" name="${escapeXml(shape.name)}">${extLst}</xdr:cNvPr><xdr:cNvCxnSpPr/></xdr:nvCxnSpPr><xdr:spPr><a:xfrm${flipV}><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="${shapeType}"><a:avLst/></a:prstGeom>${lnStyle}${tailEnd}</xdr:spPr><xdr:style>`;
     } else {
-      anchor += `<xdr:sp macro="" textlink=""><xdr:nvSpPr><xdr:cNvPr id="${index + 3}" name="${escapeXml(shape.name)}">${extLst}</xdr:cNvPr><xdr:cNvSpPr/></xdr:nvSpPr><xdr:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="${shapeType}"><a:avLst/></a:prstGeom><a:solidFill>${fillColor}</a:solidFill></xdr:spPr><xdr:style>`;
+      anchor += `<xdr:sp macro="" textlink=""><xdr:nvSpPr><xdr:cNvPr id="${index + 3}" name="${escapeXml(shape.name)}">${extLst}</xdr:cNvPr><xdr:cNvSpPr/></xdr:nvSpPr><xdr:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="${shapeType}"><a:avLst/></a:prstGeom>${fillXml}</xdr:spPr><xdr:style>`;
     }
 
     // Match sample style format
@@ -897,6 +970,64 @@ export class Workbook {
       return colorMap[color.toLowerCase()];
     }
     return `<a:srgbClr val="${color.replace("#", "")}"/>`;
+  }
+
+  private schemeToColor(schemeColor: string): string {
+    const colorMap: Record<string, string> = {
+      accent1: "4472c4",
+      accent2: "ed7d31",
+      accent3: "a5a5a5",
+      accent4: "ffc000",
+      accent5: "5b9bd5",
+      accent6: "70ad47",
+    };
+    return colorMap[schemeColor] || schemeColor;
+  }
+
+  private shapeFillToXml(fill?: ShapeFill, fallbackColor?: string): string {
+    if (!fill) {
+      const color = this.colorToScheme(fallbackColor || "#ffffff");
+      return `<a:solidFill>${color}</a:solidFill>`;
+    }
+
+    if (fill.type === 'none') {
+      return '';
+    }
+
+    if (fill.type === 'solid' && fill.color) {
+      let colorXml: string;
+      if (fill.isSchemeColor) {
+        colorXml = `<a:schemeClr val="${fill.color}"/>`;
+      } else {
+        colorXml = this.colorToScheme(fill.color);
+      }
+      return `<a:solidFill>${colorXml}</a:solidFill>`;
+    }
+
+    if (fill.type === 'gradient' && fill.gradientStops && fill.gradientStops.length > 0) {
+      let gsLst = '';
+      for (const stop of fill.gradientStops) {
+        let colorXml: string;
+        if (stop.isSchemeColor) {
+          colorXml = `<a:schemeClr val="${stop.color}">`;
+          if (stop.lumMod !== undefined) {
+            colorXml += `<a:lumMod val="${stop.lumMod}"/>`;
+          }
+          if (stop.lumOff !== undefined) {
+            colorXml += `<a:lumOff val="${stop.lumOff}"/>`;
+          }
+          colorXml += `</a:schemeClr>`;
+        } else {
+          colorXml = `<a:srgbClr val="${stop.color.replace('#', '')}"/>`;
+        }
+        gsLst += `<a:gs pos="${stop.position}">${colorXml}</a:gs>`;
+      }
+      const angle = fill.gradientAngle || 0;
+      return `<a:gradFill><a:gsLst>${gsLst}</a:gsLst><a:lin ang="${angle}" scaled="1"/></a:gradFill>`;
+    }
+
+    const color = this.colorToScheme(fallbackColor || "#ffffff");
+    return `<a:solidFill>${color}</a:solidFill>`;
   }
 
   private generateRels(): string {

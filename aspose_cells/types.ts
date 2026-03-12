@@ -186,6 +186,20 @@ export enum EncryptionType {
   AES = "aes",
 }
 
+export interface ShapeFill {
+  type: 'solid' | 'gradient' | 'none';
+  color?: string; // hex color or scheme color name (e.g., "accent1" or "#4472c4")
+  isSchemeColor?: boolean; // if true, color is a scheme color name
+  gradientStops?: Array<{
+    position: number;
+    color: string;
+    isSchemeColor?: boolean;
+    lumMod?: number;
+    lumOff?: number;
+  }>;
+  gradientAngle?: number;
+}
+
 export interface ShapeInfo {
   name: string;
   type: string; // 'line','rect','ellipse','triangle','straightConnector1','bentConnector3', etc.
@@ -197,7 +211,8 @@ export interface ShapeInfo {
   toColOff: number;
   toRow: number;
   toRowOff: number;
-  fillColor?: string; // resolved hex color
+  fill?: ShapeFill;
+  fillColor?: string; // resolved hex color (legacy)
   lineColor?: string;
   lineWidth?: number; // EMU
   flipV?: boolean;
