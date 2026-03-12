@@ -700,7 +700,9 @@ ${tableHtml}
     columnWidths: number[],
     rowHeights: number[],
   ): string {
-    // Calculate position within the cell
+    let classCounter = 0;
+    const getClassName = () => `p${shape.name.replace(/\s/g, "_")}_${classCounter++}`;
+    
     let left = shape.fromColOff / EMU_PER_PIXEL;
     let top = shape.fromRowOff / EMU_PER_PIXEL;
 
@@ -721,37 +723,97 @@ ${tableHtml}
 
     const fillColor = shape.fillColor || "#ffffff";
     const strokeColor = shape.lineColor || "#000000";
-    const strokeWidth = shape.lineWidth ? shape.lineWidth / EMU_PER_PIXEL : 0.5;
 
     const type = shape.type.toLowerCase();
     const isLine = type === "line" || type.includes("connector");
 
-    let svgContent = "";
+    const svgWidth = (width / 1.33333).toFixed(2) + "pt";
+    const svgHeight = (height / 1.33333).toFixed(2) + "pt";
+
+    let fillPath = "";
+    let strokePath = "";
+    
+    const scale = 1.33333;
+    const px = 0.5;
+    const py = 0.5;
+    const pw = width / scale - 0.5;
+    const ph = height / scale - 0.5;
+    
     if (isLine) {
-      const arrowDef = shape.hasArrowEnd
-        ? `<defs><marker id="arrow-${shape.name.replace(/\s/g, "_")}" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="${strokeColor}"/></marker></defs>`
-        : "";
-      svgContent = `${arrowDef}<line x1="${left}" y1="${top}" x2="${right}" y2="${bottom}" stroke="${strokeColor}" stroke-width="${Math.max(strokeWidth, 0.5)}" ${shape.hasArrowEnd ? `marker-end="url(#arrow-${shape.name.replace(/\s/g, "_")})"` : ""}/>`;
+      const className = getClassName();
+      strokePath = `<path d="M${left / scale},${top / scale} L${right / scale},${bottom / scale} " class="${className}" fill="none" transform="matrix(1,0,0,1,-0.000007629,-0.000007629)" />`;
     } else if (type === "ellipse" || type === "oval") {
-      const cx = left + width / 2;
-      const cy = top + height / 2;
-      svgContent = `<ellipse cx="${cx}" cy="${cy}" rx="${width / 2}" ry="${height / 2}" fill="${fillColor}" stroke="${strokeColor}" stroke-width="${Math.max(strokeWidth, 0.5)}"/>`;
+      const cx = px + pw / 2;
+      const cy = py + ph / 2;
+      const rx = pw / 2;
+      const ry = ph / 2;
+      fillPath = `<path d="M${cx},${cy - ry} C${cx + rx},${cy - ry} ${cx + rx},${cy + ry} ${cx},${cy + ry} C${cx - rx},${cy + ry} ${cx - rx},${cy - ry} ${cx},${cy - ry} Z" fill="${fillColor}" />`;
+      const className = getClassName();
+      strokePath = `<path d="M${cx},${cy - ry} C${cx + rx},${cy - ry} ${cx + rx},${cy + ry} ${cx},${cy + ry} C${cx - rx},${cy + ry} ${cx - rx},${cy - ry} ${cx},${cy - ry} Z" class="${className}" fill="none" />`;
     } else if (type === "triangle" || type === "rightTriangle") {
+      let pathD: string;
       if (type === "rightTriangle") {
-        svgContent = `<polygon points="${left},${top + height} ${left},${top} ${left + width},${top + height}" fill="${fillColor}" stroke="${strokeColor}" stroke-width="${Math.max(strokeWidth, 0.5)}"/>`;
+        pathD = `M${px},${py + ph} L${px},${py} L${px + pw},${py + ph} Z`;
       } else {
-        svgContent = `<polygon points="${left + width / 2},${top} ${left},${top + height} ${left + width},${top + height}" fill="${fillColor}" stroke="${strokeColor}" stroke-width="${Math.max(strokeWidth, 0.5)}"/>`;
+        pathD = `M${px + pw / 2},${py} L${px},${py + ph} L${px + pw},${py + ph} Z`;
       }
+      fillPath = `<path d="${pathD} " fill="${fillColor}" />`;
+      const className = getClassName();
+      strokePath = `<path d="${pathD} " class="${className}" fill="none" />`;
     } else if (type === "diamond") {
-      svgContent = `<polygon points="${left + width / 2},${top} ${left + width},${top + height / 2} ${left + width / 2},${top + height} ${left},${top + height / 2}" fill="${fillColor}" stroke="${strokeColor}" stroke-width="${Math.max(strokeWidth, 0.5)}"/>`;
+      const pathD = `M${px + pw / 2},${py} L${px + pw},${py + ph / 2} L${px + pw / 2},${py + ph} L${px},${py + ph / 2} Z`;
+      fillPath = `<path d="${pathD} " fill="${fillColor}" />`;
+      const className = getClassName();
+      strokePath = `<path d="${pathD} " class="${className}" fill="none" />`;
     } else {
-      svgContent = `<rect x="${left}" y="${top}" width="${width}" height="${height}" fill="${fillColor}" stroke="${strokeColor}" stroke-width="${Math.max(strokeWidth, 0.5)}"/>`;
+      const pathD = `M${px},${py} L${px + pw},${py} L${px + pw},${py + ph} L${px},${py + ph} Z`;
+      fillPath = `<path d="${pathD} " fill="${fillColor}" />`;
+      const className = getClassName();
+      strokePath = `<path d="${pathD} " class="${className}" fill="none" />`;
     }
 
-    const svgWidth = width;
-    const svgHeight = height;
+    const strokeClassName = strokePath.match(/class="([^"]+)"/)?.[1] || "";
+    const styleBlock = strokeClassName ? `
+   <style type="text/css">
+    <![CDATA[
+    
+    
+.${strokeClassName}
+{
+stroke:${strokeColor};
+stroke-width:1px;
+stroke-linecap:butt;
+stroke-linejoin:miter;
+}
 
-    return `<span style='mso-ignore:vglayout;position:absolute;z-index:1;margin-left:${left}px;margin-top:${top}px;width:${svgWidth}px;height:${svgHeight}px'><svg xmlns="http://www.w3.org/2000/svg" width="${svgWidth}" height="${svgHeight}"><g id="${this.escapeHtml(shape.name)}">${svgContent}</g></svg></span>`;
+    ]]></style>` : "";
+
+    const svgContent = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${svgWidth}" height="${svgHeight}">
+ <g id="SFixTitle" />
+ <g id="SContent">
+  <g transform="scale(1.33333)">
+   <rect width="100%" height="100%" fill="white" />
+   <g>
+    <g>
+     <g>${fillPath ? `
+      ${fillPath}` : ''}
+      <g />
+${strokePath ? `      ${strokePath}` : ''}
+     </g>
+    </g>
+   </g>
+  </g>
+ </g>
+ <defs />
+ <defs>
+  ${styleBlock}
+ </defs>
+</svg>`;
+
+    const leftPx = left / EMU_PER_PIXEL;
+    const topPx = top / EMU_PER_PIXEL;
+    return `<span style='mso-ignore:vglayout;position:absolute;z-index:1;margin-left:${left}px;margin-top:${top}px;width:${width}px;height:${height}px'>${svgContent}</span>`;
   }
 
   private generateShapesHtml(worksheet: Worksheet): string {
@@ -833,6 +895,9 @@ ${shapesSvg}
     right: number,
     bottom: number,
   ): string {
+    let classCounter = 0;
+    const getClassName = () => `p${shape.name.replace(/\s/g, "_")}_${classCounter++}`;
+    
     const width = right - x;
     const height = bottom - y;
 
@@ -843,29 +908,87 @@ ${shapesSvg}
     const type = shape.type.toLowerCase();
     const isLine = type === "line" || type.includes("connector");
 
-    let element = "";
+    const svgWidth = (width / 1.33333).toFixed(2) + "pt";
+    const svgHeight = (height / 1.33333).toFixed(2) + "pt";
+
+    let fillPath = "";
+    let strokePath = "";
+    
+    const px = 0.5;
+    const py = 0.5;
+    const pw = width - 0.5;
+    const ph = height - 0.5;
+    
     if (isLine) {
-      const arrowDef = shape.hasArrowEnd
-        ? `<defs><marker id="arrow-${shape.name.replace(/\s/g, "_")}" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="${strokeColor}"/></marker></defs>`
-        : "";
-      element = `${arrowDef}<line x1="${x}" y1="${y}" x2="${right}" y2="${bottom}" stroke="${strokeColor}" stroke-width="${Math.max(strokeWidth, 0.5)}" ${shape.hasArrowEnd ? `marker-end="url(#arrow-${shape.name.replace(/\s/g, "_")})"` : ""}/>`;
+      const className = getClassName();
+      strokePath = `<path d="M${x},${y} L${right},${bottom} " class="${className}" fill="none" transform="matrix(1,0,0,1,-0.000007629,-0.000007629)" />`;
     } else if (type === "ellipse" || type === "oval") {
-      const cx = x + width / 2;
-      const cy = y + height / 2;
-      element = `<ellipse cx="${cx}" cy="${cy}" rx="${width / 2}" ry="${height / 2}" fill="${fillColor}" stroke="${strokeColor}" stroke-width="${Math.max(strokeWidth, 0.5)}"/>`;
+      const cx = px + pw / 2;
+      const cy = py + ph / 2;
+      const rx = pw / 2;
+      const ry = ph / 2;
+      fillPath = `<path d="M${cx},${cy - ry} C${cx + rx},${cy - ry} ${cx + rx},${cy + ry} ${cx},${cy + ry} C${cx - rx},${cy + ry} ${cx - rx},${cy - ry} ${cx},${cy - ry} Z" fill="${fillColor}" />`;
+      const className = getClassName();
+      strokePath = `<path d="M${cx},${cy - ry} C${cx + rx},${cy - ry} ${cx + rx},${cy + ry} ${cx},${cy + ry} C${cx - rx},${cy + ry} ${cx - rx},${cy - ry} ${cx},${cy - ry} Z" class="${className}" fill="none" />`;
     } else if (type === "triangle" || type === "rightTriangle") {
+      let pathD: string;
       if (type === "rightTriangle") {
-        element = `<polygon points="${x},${y + height} ${x},${y} ${x + width},${y + height}" fill="${fillColor}" stroke="${strokeColor}" stroke-width="${Math.max(strokeWidth, 0.5)}"/>`;
+        pathD = `M${px},${py + ph} L${px},${py} L${px + pw},${py + ph} Z`;
       } else {
-        element = `<polygon points="${x + width / 2},${y} ${x},${y + height} ${x + width},${y + height}" fill="${fillColor}" stroke="${strokeColor}" stroke-width="${Math.max(strokeWidth, 0.5)}"/>`;
+        pathD = `M${px + pw / 2},${py} L${px},${py + ph} L${px + pw},${py + ph} Z`;
       }
+      fillPath = `<path d="${pathD} " fill="${fillColor}" />`;
+      const className = getClassName();
+      strokePath = `<path d="${pathD} " class="${className}" fill="none" />`;
     } else if (type === "diamond") {
-      element = `<polygon points="${x + width / 2},${y} ${x + width},${y + height / 2} ${x + width / 2},${y + height} ${x},${y + height / 2}" fill="${fillColor}" stroke="${strokeColor}" stroke-width="${Math.max(strokeWidth, 0.5)}"/>`;
+      const pathD = `M${px + pw / 2},${py} L${px + pw},${py + ph / 2} L${px + pw / 2},${py + ph} L${px},${py + ph / 2} Z`;
+      fillPath = `<path d="${pathD} " fill="${fillColor}" />`;
+      const className = getClassName();
+      strokePath = `<path d="${pathD} " class="${className}" fill="none" />`;
     } else {
-      element = `<rect x="${x}" y="${y}" width="${width}" height="${height}" fill="${fillColor}" stroke="${strokeColor}" stroke-width="${Math.max(strokeWidth, 0.5)}"/>`;
+      const pathD = `M${px},${py} L${px + pw},${py} L${px + pw},${py + ph} L${px},${py + ph} Z`;
+      fillPath = `<path d="${pathD} " fill="${fillColor}" />`;
+      const className = getClassName();
+      strokePath = `<path d="${pathD} " class="${className}" fill="none" />`;
     }
 
-    return `  <g id="${this.escapeHtml(shape.name)}">${element}</g>\n`;
+    const strokeClassName = strokePath.match(/class="([^"]+)"/)?.[1] || "";
+    const styleBlock = strokeClassName ? `
+  <defs>
+   <style type="text/css">
+    <![CDATA[
+    
+    
+.${strokeClassName}
+{
+stroke:${strokeColor};
+stroke-width:1px;
+stroke-linecap:butt;
+stroke-linejoin:miter;
+}
+
+    ]]></style>
+  </defs>` : "";
+
+    return `  <g id="SFixTitle" />
+  <g id="SContent">
+   <g transform="scale(1.33333)">
+    <rect width="100%" height="100%" fill="white" />
+    <g>
+     <g>
+      <g>
+       ${fillPath}
+       <g />
+       ${strokePath}
+      </g>
+     </g>
+    </g>
+   </g>
+  </g>
+  <defs />
+  <defs>${styleBlock}
+</defs>
+`;
   }
 
   private escapeHtml(str: string): string {
