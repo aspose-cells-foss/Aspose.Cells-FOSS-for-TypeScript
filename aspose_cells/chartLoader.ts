@@ -226,6 +226,28 @@ export class ChartLoader {
     const plotArea = chart.getElementsByTagName("c:plotArea")[0];
     if (!plotArea) return;
 
+    let plotAreaLayout:
+      | { x: number; y: number; width: number; height: number }
+      | undefined;
+    const layoutEl = plotArea.getElementsByTagName("c:layout")[0];
+    if (layoutEl) {
+      const manualLayout = layoutEl.getElementsByTagName("c:manualLayout")[0];
+      if (manualLayout) {
+        const xEl = manualLayout.getElementsByTagName("c:x")[0];
+        const yEl = manualLayout.getElementsByTagName("c:y")[0];
+        const wEl = manualLayout.getElementsByTagName("c:w")[0];
+        const hEl = manualLayout.getElementsByTagName("c:h")[0];
+        if (xEl && yEl && wEl && hEl) {
+          plotAreaLayout = {
+            x: parseFloat(xEl.getAttribute("val") || "0"),
+            y: parseFloat(yEl.getAttribute("val") || "0"),
+            width: parseFloat(wEl.getAttribute("val") || "0"),
+            height: parseFloat(hEl.getAttribute("val") || "0"),
+          };
+        }
+      }
+    }
+
     const chartTypes =
       plotArea.getElementsByTagName("c:barChart")[0] ||
       plotArea.getElementsByTagName("c:bar3DChart")[0] ||
@@ -244,10 +266,17 @@ export class ChartLoader {
       plotArea.getElementsByTagName("c:radar3DChart")[0];
 
     let chartType = "column";
-    if (plotArea.getElementsByTagName("c:barChart")[0]) chartType = "bar";
-    else if (plotArea.getElementsByTagName("c:bar3DChart")[0])
-      chartType = "bar";
-    else if (plotArea.getElementsByTagName("c:lineChart")[0])
+    if (plotArea.getElementsByTagName("c:barChart")[0]) {
+      const barDir = plotArea
+        .getElementsByTagName("c:barChart")[0]
+        .getElementsByTagName("c:barDir")[0];
+      chartType = barDir?.getAttribute("val") === "bar" ? "bar" : "column";
+    } else if (plotArea.getElementsByTagName("c:bar3DChart")[0]) {
+      const barDir = plotArea
+        .getElementsByTagName("c:bar3DChart")[0]
+        .getElementsByTagName("c:barDir")[0];
+      chartType = barDir?.getAttribute("val") === "bar" ? "bar" : "column";
+    } else if (plotArea.getElementsByTagName("c:lineChart")[0])
       chartType = "line";
     else if (plotArea.getElementsByTagName("c:line3DChart")[0])
       chartType = "line";
@@ -352,12 +381,56 @@ export class ChartLoader {
       series.push({ name: seriesName, values, categories });
     }
 
+    let legendPosition: "left" | "right" | "top" | "bottom" = "right";
+    const legendEl = chart.getElementsByTagName("c:legend")[0];
+    if (legendEl) {
+      const legendPosEl = legendEl.getElementsByTagName("c:legendPos")[0];
+      if (legendPosEl) {
+        const pos = legendPosEl.getAttribute("val");
+        if (pos === "l") legendPosition = "left";
+        else if (pos === "r") legendPosition = "right";
+        else if (pos === "t") legendPosition = "top";
+        else if (pos === "b") legendPosition = "bottom";
+      }
+    }
+
+    let categoryAxisPosition: "left" | "right" | "top" | "bottom" = "bottom";
+    let valueAxisPosition: "left" | "right" | "top" | "bottom" = "left";
+
+    const catAx = plotArea.getElementsByTagName("c:catAx")[0];
+    if (catAx) {
+      const catAxPos = catAx.getElementsByTagName("c:axPos")[0];
+      if (catAxPos) {
+        const pos = catAxPos.getAttribute("val");
+        if (pos === "l") categoryAxisPosition = "left";
+        else if (pos === "r") categoryAxisPosition = "right";
+        else if (pos === "t") categoryAxisPosition = "top";
+        else if (pos === "b") categoryAxisPosition = "bottom";
+      }
+    }
+
+    const valAx = plotArea.getElementsByTagName("c:valAx")[0];
+    if (valAx) {
+      const valAxPos = valAx.getElementsByTagName("c:axPos")[0];
+      if (valAxPos) {
+        const pos = valAxPos.getAttribute("val");
+        if (pos === "l") valueAxisPosition = "left";
+        else if (pos === "r") valueAxisPosition = "right";
+        else if (pos === "t") valueAxisPosition = "top";
+        else if (pos === "b") valueAxisPosition = "bottom";
+      }
+    }
+
     this.charts.push({
       name: chartTitle || `Chart ${this.charts.length + 1}`,
       type: chartType,
       chartType: chartType as any,
       title: chartTitle,
       series,
+      legendPosition,
+      categoryAxisPosition,
+      valueAxisPosition,
+      plotArea: plotAreaLayout,
       fromRow,
       fromCol,
       toRow,

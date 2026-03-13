@@ -254,6 +254,15 @@ export interface ChartInfo extends ShapeInfo {
   chartType: ChartType;
   title?: string;
   series: ChartSeries[];
+  legendPosition?: "left" | "right" | "top" | "bottom";
+  categoryAxisPosition?: "left" | "right" | "top" | "bottom";
+  valueAxisPosition?: "left" | "right" | "top" | "bottom";
+  plotArea?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
   fromRowOff?: number;
   fromColOff?: number;
   toRowOff?: number;

@@ -41,6 +41,7 @@ export class Workbook {
   private _protected = false;
   private _password?: string;
   private _charts: ChartInfo[] = [];
+  private _activeTab = 0;
 
   constructor() {
     this._sheets = new WorksheetCollection();
@@ -78,6 +79,14 @@ export class Workbook {
     return this._charts;
   }
 
+  get activeTab(): number {
+    return this._activeTab;
+  }
+
+  set activeTab(value: number) {
+    this._activeTab = value;
+  }
+
   getNumFmt(numFmtId: string | null): string {
     return this._sheets.getNumFmt(numFmtId);
   }
@@ -88,6 +97,7 @@ export class Workbook {
       await this.loadSharedStrings(zip);
       await this.loadStyles(zip);
       await this.loadSheets(zip);
+      await this.loadWorkbookViews(zip);
     } finally {
       await zip.close();
     }
@@ -99,6 +109,20 @@ export class Workbook {
       const worksheet = this.worksheets.get(chart.sheetIndex);
       if (worksheet) {
         worksheet.addShape(chart);
+      }
+    }
+  }
+
+  private async loadWorkbookViews(zip: any) {
+    const content = await readZipEntryUtil(zip, "xl/workbook.xml");
+    if (!content) return;
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(content, "text/xml");
+    const workbookView = doc.getElementsByTagName("workbookView")[0];
+    if (workbookView) {
+      const activeTab = workbookView.getAttribute("activeTab");
+      if (activeTab) {
+        this._activeTab = parseInt(activeTab, 10);
       }
     }
   }

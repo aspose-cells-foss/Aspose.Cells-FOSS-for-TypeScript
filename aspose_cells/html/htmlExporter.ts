@@ -40,6 +40,7 @@ export class HtmlExporter {
       fileName + "_files",
       this.workbook.worksheets.map((w: Worksheet) => w.name),
       fileName,
+      this.workbook.activeTab,
     );
     await writeFile(join(htmlDir, "tabstrip.htm"), tabstripHtml);
 
@@ -266,12 +267,12 @@ function fnSetActiveSheet(iSh)
   <x:WindowTopY>-110</x:WindowTopY>
   <x:RefModeR1C1/>
   <x:TabRatio>600</x:TabRatio>
-  <x:ActiveSheet>1</x:ActiveSheet>
- </x:ExcelWorkbook>
+   <x:ActiveSheet>0</x:ActiveSheet>
+  </x:ExcelWorkbook>
 </xml><![endif]-->
 </head>
     <frameset rows="*,39">
-     <frame src="${filesDir}/sheet${String(this.workbook.worksheets.length).padStart(3, "0")}.htm" name="frSheet"/>
+     <frame src="${filesDir}/sheet001.htm" name="frSheet"/>
      <frame src="${filesDir}/tabstrip.htm" name="frTabs" marginwidth="0" marginheight="0"/>
      <noframes>
       <body>
@@ -449,10 +450,11 @@ td
     filesDir: string,
     sheetNames: string[],
     mainFileName: string,
+    activeTab: number = 0,
   ): string {
     const tabs = sheetNames
       .map((name, i) => {
-        const isActive = i === sheetNames.length - 1 ? "active" : "";
+        const isActive = i === activeTab ? "active" : "";
         return `<td nowrap='nowrap' class='tab ${isActive}'><b><small><small>&nbsp;<a href="sheet${String(i + 1).padStart(3, "0")}.htm" target="frSheet"><font face="Arial" color="#000000">${name}</font></a>&nbsp;</small></small></b></td>`;
       })
       .join(" ");
