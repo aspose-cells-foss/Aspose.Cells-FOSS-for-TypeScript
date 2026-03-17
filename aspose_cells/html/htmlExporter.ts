@@ -714,7 +714,7 @@ ${tableHtml}
 
     let classCounter = 0;
     const getClassName = () =>
-      `p${shape.name.replace(/\s/g, "_")}_${classCounter++}`;
+      `p${shape.name.replace(/[\s:]/g, "_")}_${classCounter++}`;
 
     const fromColOff = shape.fromColOff ?? 0;
     const fromRowOff = shape.fromRowOff ?? 0;
@@ -793,14 +793,19 @@ ${tableHtml}
       fillColor = shape.fillColor.toUpperCase();
     }
 
-    const strokeColor = shape.lineColor || "#000000";
-
     const type = shape.type.toLowerCase();
     const isLine = type === "line" || type.includes("connector");
     const isBentConnector =
       type.includes("bent") ||
       type.includes("elbow") ||
       type.includes("curved");
+
+    const strokeColor =
+      isLine && (!shape.lineColor || shape.lineColor === "#000000")
+        ? "#4472C4"
+        : shape.lineColor || "#000000";
+
+    const strokeWidth = (shape.lineWidth || 12700) / 12700;
 
     const svgWidth = (width / 1.33333 + 0.75).toFixed(2) + "pt";
     const svgHeight = (height / 1.33333 + 0.75).toFixed(2) + "pt";
@@ -833,20 +838,19 @@ ${tableHtml}
       const className = getClassName();
 
       if (isBentConnector) {
-        let cornerX = 0;
-        for (let col = shape.fromCol; col < shape.toCol; col++) {
-          cornerX += columnWidths[col] || 64;
-        }
-        cornerX = cornerX / scale;
-        const cornerY = fromRowOff / EMU_PER_PIXEL / scale;
+        const svgW = width / scale;
+        const svgH = height / scale;
 
-        const endY = bottom / scale;
-        const endX = right / scale;
-        const startX = fromColOff / EMU_PER_PIXEL / scale;
+        const startX = 0;
+        const startY = svgH * 0.014;
+        const cornerX = svgW * 0.75;
+        const cornerY = startY;
+        const endX = svgW;
+        const endY = svgH * 0.975;
 
-        strokePath = `<path d="M${startX.toFixed(6)},${cornerY.toFixed(6)} L${cornerX.toFixed(6)},${cornerY.toFixed(6)} L${cornerX.toFixed(6)},${endY.toFixed(6)} L${endX.toFixed(6)},${endY.toFixed(6)} " class="${className}" fill="none" transform="matrix(1,0,0,1,-0.000007629,-0.000007629)" />`;
+        strokePath = `<path d="M${startX.toFixed(6)},${startY.toFixed(6)} L${cornerX.toFixed(6)},${cornerY.toFixed(6)} L${cornerX.toFixed(6)},${endY.toFixed(6)} L${endX.toFixed(6)},${endY.toFixed(6)} " class="${className}" fill="none" />`;
       } else {
-        strokePath = `<path d="M${left / scale},${top / scale} L${right / scale},${bottom / scale} " class="${className}" fill="none" transform="matrix(1,0,0,1,-0.000007629,-0.000007629)" />`;
+        strokePath = `<path d="M${left / scale},${top / scale} L${right / scale},${bottom / scale} " class="${className}" fill="none" />`;
       }
 
       if (shape.hasArrowEnd) {
@@ -862,7 +866,7 @@ ${tableHtml}
         const ay2 = bottom - arrowSize * Math.sin(angle + arrowAngle);
 
         const arrowPath = `M${right / scale},${bottom / scale} L${ax1 / scale},${ay1 / scale} L${ax2 / scale},${ay2 / scale} Z`;
-        fillPath = `<path d="${arrowPath}" fill="${strokeColor}" transform="matrix(1,0,0,1,-0.000007629,-0.000007629)" />`;
+        fillPath = `<path d="${arrowPath}" fill="${strokeColor}" />`;
       }
     } else if (type === "ellipse" || type === "oval") {
       const cx = px + pw / 2;
@@ -913,7 +917,7 @@ ${tableHtml}
 .${strokeClassName}
 {
 stroke:${strokeColor};
-stroke-width:1px;
+stroke-width:${strokeWidth}px;
 stroke-linecap:butt;
 stroke-linejoin:miter;
 }
@@ -933,18 +937,11 @@ stroke-linejoin:miter;
     <rect width="100%" height="100%" fill="white" />
     <g>
      <g>
-      <g>${
-        fillPath
-          ? `
-       ${fillPath}`
-          : ""
-      }
-       <g />
-${strokePath ? `      ${strokePath}` : ""}
-     </g>
+      ${fillPath ? fillPath + "\n" : ""}${strokePath ? strokePath : ""}
      </g>
     </g>
    </g>
+  </g>
 </svg>`;
 
     const leftPx = left / EMU_PER_PIXEL;
@@ -1038,7 +1035,7 @@ ${shapesSvg}
   ): string {
     let classCounter = 0;
     const getClassName = () =>
-      `p${shape.name.replace(/\s/g, "_")}_${classCounter++}`;
+      `p${shape.name.replace(/[\s:]/g, "_")}_${classCounter++}`;
 
     const width = right - x;
     const height = bottom - y;
@@ -1097,14 +1094,19 @@ ${shapesSvg}
       fillColor = shape.fillColor;
     }
 
-    const strokeColor = shape.lineColor || "#000000";
-
     const type = shape.type.toLowerCase();
     const isLine = type === "line" || type.includes("connector");
     const isBentConnector =
       type.includes("bent") ||
       type.includes("elbow") ||
       type.includes("curved");
+
+    const strokeColor =
+      isLine && (!shape.lineColor || shape.lineColor === "#000000")
+        ? "#4472C4"
+        : shape.lineColor || "#000000";
+
+    const strokeWidth = (shape.lineWidth || 12700) / 12700;
 
     const svgWidth = width.toFixed(2) + "pt";
     const svgHeight = height.toFixed(2) + "pt";
@@ -1201,7 +1203,7 @@ ${shapesSvg}
 .${strokeClassName}
 {
 stroke:${strokeColor};
-stroke-width:1px;
+stroke-width:${strokeWidth}px;
 stroke-linecap:butt;
 stroke-linejoin:miter;
 }
