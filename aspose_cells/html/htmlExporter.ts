@@ -797,6 +797,10 @@ ${tableHtml}
 
     const type = shape.type.toLowerCase();
     const isLine = type === "line" || type.includes("connector");
+    const isBentConnector =
+      type.includes("bent") ||
+      type.includes("elbow") ||
+      type.includes("curved");
 
     const svgWidth = (width / 1.33333 + 0.75).toFixed(2) + "pt";
     const svgHeight = (height / 1.33333 + 0.75).toFixed(2) + "pt";
@@ -827,7 +831,23 @@ ${tableHtml}
 
     if (isLine) {
       const className = getClassName();
-      strokePath = `<path d="M${left / scale},${top / scale} L${right / scale},${bottom / scale} " class="${className}" fill="none" transform="matrix(1,0,0,1,-0.000007629,-0.000007629)" />`;
+
+      if (isBentConnector) {
+        let cornerX = 0;
+        for (let col = shape.fromCol; col < shape.toCol; col++) {
+          cornerX += columnWidths[col] || 64;
+        }
+        cornerX = cornerX / scale;
+        const cornerY = fromRowOff / EMU_PER_PIXEL / scale;
+
+        const endY = bottom / scale;
+        const endX = right / scale;
+        const startX = fromColOff / EMU_PER_PIXEL / scale;
+
+        strokePath = `<path d="M${startX.toFixed(6)},${cornerY.toFixed(6)} L${cornerX.toFixed(6)},${cornerY.toFixed(6)} L${cornerX.toFixed(6)},${endY.toFixed(6)} L${endX.toFixed(6)},${endY.toFixed(6)} " class="${className}" fill="none" transform="matrix(1,0,0,1,-0.000007629,-0.000007629)" />`;
+      } else {
+        strokePath = `<path d="M${left / scale},${top / scale} L${right / scale},${bottom / scale} " class="${className}" fill="none" transform="matrix(1,0,0,1,-0.000007629,-0.000007629)" />`;
+      }
 
       if (shape.hasArrowEnd) {
         const dx = right - left;
@@ -903,30 +923,28 @@ stroke-linejoin:miter;
 
     const svgContent = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${svgWidth}" height="${svgHeight}">
- <g id="SFixTitle" />
- <g id="SContent">
-  <g transform="scale(1.33333)">
-   <rect width="100%" height="100%" fill="white" />
-   <g>
+  <defs>
+    ${gradientDefs}
+    ${styleBlock}
+  </defs>
+  <g id="SFixTitle" />
+  <g id="SContent">
+   <g transform="scale(1.33333)">
+    <rect width="100%" height="100%" fill="white" />
     <g>
-     <g>${
-       fillPath
-         ? `
-      ${fillPath}`
-         : ""
-     }
-      <g />
+     <g>
+      <g>${
+        fillPath
+          ? `
+       ${fillPath}`
+          : ""
+      }
+       <g />
 ${strokePath ? `      ${strokePath}` : ""}
      </g>
      </g>
     </g>
    </g>
-  </g>
-  <defs>${gradientDefs}
-  </defs>
-  <defs>
-   ${styleBlock}
-  </defs>
 </svg>`;
 
     const leftPx = left / EMU_PER_PIXEL;
@@ -1083,6 +1101,10 @@ ${shapesSvg}
 
     const type = shape.type.toLowerCase();
     const isLine = type === "line" || type.includes("connector");
+    const isBentConnector =
+      type.includes("bent") ||
+      type.includes("elbow") ||
+      type.includes("curved");
 
     const svgWidth = width.toFixed(2) + "pt";
     const svgHeight = height.toFixed(2) + "pt";
