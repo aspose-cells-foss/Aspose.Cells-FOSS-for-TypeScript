@@ -671,13 +671,16 @@ ${tableHtml}
 
         if (cellShapes.length > 0) {
           let shapesInCell = "";
+          let shapeIndex = 0;
           for (const shape of cellShapes) {
             shapesInCell += this.shapeToCellSvg(
               shape,
               columnWidths,
               rowHeights,
               worksheet,
+              shapes.indexOf(shape),
             );
+            shapeIndex++;
           }
 
           const cellContent = this.escapeHtml(value);
@@ -707,14 +710,15 @@ ${tableHtml}
     columnWidths: number[],
     rowHeights: number[],
     worksheet: Worksheet,
+    shapeIndex: number,
   ): string {
     if ("chartType" in shape) {
       return this.chartRenderer.renderChart(shape as ChartInfo, worksheet);
     }
 
     let classCounter = 0;
-    const getClassName = () =>
-      `p${shape.name.replace(/[\s:]/g, "_")}_${classCounter++}`;
+    const getClassName = (strokeColor: string, strokeWidth: number) =>
+      `p${shapeIndex + 1}_${classCounter++}`;
 
     const fromColOff = shape.fromColOff ?? 0;
     const fromRowOff = shape.fromRowOff ?? 0;
@@ -807,8 +811,43 @@ ${tableHtml}
 
     const strokeWidth = (shape.lineWidth || 12700) / 12700;
 
-    const svgWidth = (width / 1.33333 + 0.75).toFixed(2) + "pt";
-    const svgHeight = (height / 1.33333 + 0.75).toFixed(2) + "pt";
+    const originalWidth = width / 1.33333 + 0.75;
+    const originalHeight = height / 1.33333 + 0.75;
+
+    const getActualDimensions = (
+      ow: number,
+      oh: number,
+      rotation: number | undefined,
+      flipV: boolean,
+      flipH: boolean,
+    ) => {
+      let aw = ow;
+      let ah = oh;
+      if (rotation && rotation !== 0) {
+        const rotationRad = (rotation * Math.PI) / 180;
+        const cosR = Math.abs(Math.cos(rotationRad));
+        const sinR = Math.abs(Math.sin(rotationRad));
+        aw = ow * cosR + oh * sinR;
+        ah = ow * sinR + oh * cosR;
+      }
+      if (flipV || flipH) {
+        aw = ow;
+        ah = oh;
+      }
+      return { width: aw, height: ah };
+    };
+
+    const { width: svgW, height: svgH } = getActualDimensions(
+      originalWidth,
+      originalHeight,
+      shape.rotation,
+      shape.flipV || false,
+      shape.flipH || false,
+    );
+
+    const extraPadding = shape.hasArrowEnd ? 35 : 0;
+    const svgWidth = (svgW + extraPadding).toFixed(2) + "pt";
+    const svgHeight = (svgH + extraPadding).toFixed(2) + "pt";
 
     let fillPath = "";
     let strokePath = "";
@@ -835,7 +874,7 @@ ${tableHtml}
     }
 
     if (isLine) {
-      const className = getClassName();
+      const className = getClassName(strokeColor, strokeWidth);
 
       if (isBentConnector) {
         const svgW = width / scale;
@@ -850,23 +889,25 @@ ${tableHtml}
 
         strokePath = `<path d="M${startX.toFixed(6)},${startY.toFixed(6)} L${cornerX.toFixed(6)},${cornerY.toFixed(6)} L${cornerX.toFixed(6)},${endY.toFixed(6)} L${endX.toFixed(6)},${endY.toFixed(6)} " class="${className}" fill="none" />`;
       } else {
-        strokePath = `<path d="M${left / scale},${top / scale} L${right / scale},${bottom / scale} " class="${className}" fill="none" />`;
+        strokePath = `<path d="M${left / scale},${top / scale} L${right / scale},${bottom / scale} " class="${className}" fill="none" transform="matrix(1,0,0,1,-0.000007629,-0.000007629)" />`;
       }
 
       if (shape.hasArrowEnd) {
         const dx = right - left;
         const dy = bottom - top;
         const angle = Math.atan2(dy, dx);
-        const arrowSize = 8;
+        const arrowSize = 8 / scale;
         const arrowAngle = Math.PI / 6;
 
-        const ax1 = right - arrowSize * Math.cos(angle - arrowAngle);
-        const ay1 = bottom - arrowSize * Math.sin(angle - arrowAngle);
-        const ax2 = right - arrowSize * Math.cos(angle + arrowAngle);
-        const ay2 = bottom - arrowSize * Math.sin(angle + arrowAngle);
+        const ax1 = arrowSize * Math.cos(angle - arrowAngle);
+        const ay1 = arrowSize * Math.sin(angle - arrowAngle);
+        const ax2 = arrowSize * Math.cos(angle + arrowAngle);
+        const ay2 = arrowSize * Math.sin(angle + arrowAngle);
 
-        const arrowPath = `M${right / scale},${bottom / scale} L${ax1 / scale},${ay1 / scale} L${ax2 / scale},${ay2 / scale} Z`;
-        fillPath = `<path d="${arrowPath}" fill="${strokeColor}" />`;
+        const arrowPath = `M0,0 L${ax1.toFixed(6)},${ay1.toFixed(6)} L${ax2.toFixed(6)},${ay2.toFixed(6)} Z`;
+        const svgEndX = right / scale;
+        const svgEndY = bottom / scale;
+        fillPath = `<path d="${arrowPath}" fill="${strokeColor}" transform="matrix(-1,0,0,-1,${svgEndX},${svgEndY})" />`;
       }
     } else if (type === "ellipse" || type === "oval") {
       const cx = px + pw / 2;
@@ -877,7 +918,7 @@ ${tableHtml}
       fillPath = hasFill
         ? `<path d="${ellipsePath}" fill="${fillColor}"${transform ? ` transform="${transform}"` : ""} />`
         : "";
-      const className = getClassName();
+      const className = getClassName(strokeColor, strokeWidth);
       strokePath = `<path d="${ellipsePath}" class="${className}" fill="none"${transform ? ` transform="${transform}"` : ""} />`;
     } else if (type === "triangle" || type === "rightTriangle") {
       let pathD: string;
@@ -889,21 +930,21 @@ ${tableHtml}
       fillPath = hasFill
         ? `<path d="${pathD} " fill="${fillColor}"${transform ? ` transform="${transform}"` : ""} />`
         : "";
-      const className = getClassName();
+      const className = getClassName(strokeColor, strokeWidth);
       strokePath = `<path d="${pathD} " class="${className}" fill="none"${transform ? ` transform="${transform}"` : ""} />`;
     } else if (type === "diamond") {
       const pathD = `M${px + pw / 2},${py} L${px + pw},${py + ph / 2} L${px + pw / 2},${py + ph} L${px},${py + ph / 2} Z`;
       fillPath = hasFill
         ? `<path d="${pathD} " fill="${fillColor}"${transform ? ` transform="${transform}"` : ""} />`
         : "";
-      const className = getClassName();
+      const className = getClassName(strokeColor, strokeWidth);
       strokePath = `<path d="${pathD} " class="${className}" fill="none"${transform ? ` transform="${transform}"` : ""} />`;
     } else {
       const pathD = `M${px},${py} L${px + pw},${py} L${px + pw},${py + ph} L${px},${py + ph} Z`;
       fillPath = hasFill
         ? `<path d="${pathD} " fill="${fillColor}"${transform ? ` transform="${transform}"` : ""} />`
         : "";
-      const className = getClassName();
+      const className = getClassName(strokeColor, strokeWidth);
       strokePath = `<path d="${pathD} " class="${className}" fill="none"${transform ? ` transform="${transform}"` : ""} />`;
     }
 
@@ -933,15 +974,17 @@ stroke-linejoin:miter;
   </defs>
   <g id="SFixTitle" />
   <g id="SContent">
-   <g transform="scale(1.33333)">
-    <rect width="100%" height="100%" fill="white" />
-    <g>
+    <g transform="scale(1.33333)">
+     <rect width="100%" height="100%" fill="white" />
      <g>
-      ${fillPath ? fillPath + "\n" : ""}${strokePath ? strokePath : ""}
+      <g>
+       <g>
+        ${fillPath ? fillPath + "\n" : ""}${strokePath ? strokePath : ""}
+       </g>
+      </g>
      </g>
     </g>
    </g>
-  </g>
 </svg>`;
 
     const leftPx = left / EMU_PER_PIXEL;
@@ -1034,11 +1077,13 @@ ${shapesSvg}
     bottom: number,
   ): string {
     let classCounter = 0;
-    const getClassName = () =>
-      `p${shape.name.replace(/[\s:]/g, "_")}_${classCounter++}`;
+    const getClassName = (strokeColor: string, strokeWidth: number) =>
+      `p${classCounter++}`;
 
     const width = right - x;
     const height = bottom - y;
+
+    const scale = 1.33333;
 
     const schemeColorMap: Record<string, string> = {
       accent1: "#4472c4",
@@ -1135,23 +1180,23 @@ ${shapesSvg}
     }
 
     if (isLine) {
-      const className = getClassName();
+      const className = getClassName(strokeColor, strokeWidth);
       strokePath = `<path d="M${x},${y} L${right},${bottom} " class="${className}" fill="none" transform="matrix(1,0,0,1,-0.000007629,-0.000007629)" />`;
 
       if (shape.hasArrowEnd) {
         const dx = right - x;
         const dy = bottom - y;
         const angle = Math.atan2(dy, dx);
-        const arrowSize = 8;
+        const arrowSize = 8 / scale;
         const arrowAngle = Math.PI / 6;
 
-        const ax1 = right - arrowSize * Math.cos(angle - arrowAngle);
-        const ay1 = bottom - arrowSize * Math.sin(angle - arrowAngle);
-        const ax2 = right - arrowSize * Math.cos(angle + arrowAngle);
-        const ay2 = bottom - arrowSize * Math.sin(angle + arrowAngle);
+        const ax1 = arrowSize * Math.cos(angle - arrowAngle);
+        const ay1 = arrowSize * Math.sin(angle - arrowAngle);
+        const ax2 = arrowSize * Math.cos(angle + arrowAngle);
+        const ay2 = arrowSize * Math.sin(angle + arrowAngle);
 
-        const arrowPath = `M${right},${bottom} L${ax1},${ay1} L${ax2},${ay2} Z`;
-        fillPath = `<path d="${arrowPath}" fill="${strokeColor}" transform="matrix(1,0,0,1,-0.000007629,-0.000007629)" />`;
+        const arrowPath = `M0,0 L${ax1.toFixed(6)},${ay1.toFixed(6)} L${ax2.toFixed(6)},${ay2.toFixed(6)} Z`;
+        fillPath = `<path d="${arrowPath}" fill="${strokeColor}" transform="matrix(-1,0,0,-1,${right},${bottom})" />`;
       }
     } else if (type === "ellipse" || type === "oval") {
       const cx = px + pw / 2;
@@ -1162,7 +1207,7 @@ ${shapesSvg}
       fillPath = hasFill
         ? `<path d="${ellipsePath}" fill="${fillColor}"${transform ? ` transform="${transform}"` : ""} />`
         : "";
-      const className = getClassName();
+      const className = getClassName(strokeColor, strokeWidth);
       strokePath = `<path d="${ellipsePath}" class="${className}" fill="none"${transform ? ` transform="${transform}"` : ""} />`;
     } else if (type === "triangle" || type === "rightTriangle") {
       let pathD: string;
@@ -1174,21 +1219,21 @@ ${shapesSvg}
       fillPath = hasFill
         ? `<path d="${pathD} " fill="${fillColor}"${transform ? ` transform="${transform}"` : ""} />`
         : "";
-      const className = getClassName();
+      const className = getClassName(strokeColor, strokeWidth);
       strokePath = `<path d="${pathD} " class="${className}" fill="none"${transform ? ` transform="${transform}"` : ""} />`;
     } else if (type === "diamond") {
       const pathD = `M${px + pw / 2},${py} L${px + pw},${py + ph / 2} L${px + pw / 2},${py + ph} L${px},${py + ph / 2} Z`;
       fillPath = hasFill
         ? `<path d="${pathD} " fill="${fillColor}"${transform ? ` transform="${transform}"` : ""} />`
         : "";
-      const className = getClassName();
+      const className = getClassName(strokeColor, strokeWidth);
       strokePath = `<path d="${pathD} " class="${className}" fill="none"${transform ? ` transform="${transform}"` : ""} />`;
     } else {
       const pathD = `M${px},${py} L${px + pw},${py} L${px + pw},${py + ph} L${px},${py + ph} Z`;
       fillPath = hasFill
         ? `<path d="${pathD} " fill="${fillColor}"${transform ? ` transform="${transform}"` : ""} />`
         : "";
-      const className = getClassName();
+      const className = getClassName(strokeColor, strokeWidth);
       strokePath = `<path d="${pathD} " class="${className}" fill="none"${transform ? ` transform="${transform}"` : ""} />`;
     }
 
