@@ -671,16 +671,15 @@ ${tableHtml}
 
         if (cellShapes.length > 0) {
           let shapesInCell = "";
-          let shapeIndex = 0;
           for (const shape of cellShapes) {
+            const shapeIndex = shapes.indexOf(shape);
             shapesInCell += this.shapeToCellSvg(
               shape,
               columnWidths,
               rowHeights,
               worksheet,
-              shapes.indexOf(shape),
+              shapeIndex,
             );
-            shapeIndex++;
           }
 
           const cellContent = this.escapeHtml(value);
@@ -811,61 +810,50 @@ ${tableHtml}
 
     const strokeWidth = (shape.lineWidth || 12700) / 12700;
 
-    const originalWidth = width / 1.33333 + 0.75;
-    const originalHeight = height / 1.33333 + 0.75;
-
-    const getActualDimensions = (
-      ow: number,
-      oh: number,
-      rotation: number | undefined,
-      flipV: boolean,
-      flipH: boolean,
-    ) => {
-      let aw = ow;
-      let ah = oh;
-      if (rotation && rotation !== 0) {
-        const rotationRad = (rotation * Math.PI) / 180;
-        const cosR = Math.abs(Math.cos(rotationRad));
-        const sinR = Math.abs(Math.sin(rotationRad));
-        aw = ow * cosR + oh * sinR;
-        ah = ow * sinR + oh * cosR;
-      }
-      if (flipV || flipH) {
-        aw = ow;
-        ah = oh;
-      }
-      return { width: aw, height: ah };
-    };
-
-    const { width: svgW, height: svgH } = getActualDimensions(
-      originalWidth,
-      originalHeight,
-      shape.rotation,
-      shape.flipV || false,
-      shape.flipH || false,
-    );
-
-    const extraPadding = shape.hasArrowEnd ? 35 : 0;
-    const svgWidth = (svgW + extraPadding).toFixed(2) + "pt";
-    const svgHeight = (svgH + extraPadding).toFixed(2) + "pt";
-
-    let fillPath = "";
-    let strokePath = "";
-    let transform = "";
-
     const scale = 1.33333;
-    const px = 0.5;
-    const py = 0.5;
-    const pw = width / scale - 0.5;
-    const ph = height / scale - 0.5;
 
     const rotationRad = ((shape.rotation || 0) * Math.PI) / 180;
     const cosR = Math.cos(rotationRad);
     const sinR = Math.sin(rotationRad);
 
+    let originalWidth = width / scale + 0.75;
+    let originalHeight = height / scale + 0.75;
+
     if (shape.rotation && shape.rotation !== 0) {
-      const cx = width / scale / 2;
-      const cy = height / scale / 2;
+      const absCos = Math.abs(cosR);
+      const absSin = Math.abs(sinR);
+      originalWidth = (width / scale) * absCos + (height / scale) * absSin + 1;
+      originalHeight = (width / scale) * absSin + (height / scale) * absCos + 1;
+    }
+
+    const extraPadding = shape.hasArrowEnd ? 35 : 0;
+    const svgWidth = (originalWidth + extraPadding).toFixed(2) + "pt";
+    const svgHeight = (originalHeight + extraPadding).toFixed(2) + "pt";
+
+    let fillPath = "";
+    let strokePath = "";
+    let transform = "";
+
+    let translateX = 0;
+    let translateY = 0;
+
+    if (shape.rotation && shape.rotation !== 0) {
+      const absCos = Math.abs(cosR);
+      const absSin = Math.abs(sinR);
+      const newWidth = (width / scale) * absCos + (height / scale) * absSin;
+      const newHeight = (width / scale) * absSin + (height / scale) * absCos;
+      translateX = (newWidth - width / scale) / 2;
+      translateY = (newHeight - height / scale) / 2;
+    }
+
+    const px = 0.5 + translateX;
+    const py = 0.5 + translateY;
+    const pw = width / scale - 0.5;
+    const ph = height / scale - 0.5;
+
+    if (shape.rotation && shape.rotation !== 0) {
+      const cx = (width / scale / 2 + translateX);
+      const cy = (height / scale / 2 + translateY);
       transform = `matrix(${cosR},${sinR},${-sinR},${cosR},${cy * sinR + cx - cx * cosR},${cy - cx * sinR - cy * cosR})`;
     } else if (shape.flipV) {
       transform = `matrix(1,0,0,-1,0,${height / EMU_PER_PIXEL})`;
@@ -939,7 +927,15 @@ ${tableHtml}
         : "";
       const className = getClassName(strokeColor, strokeWidth);
       strokePath = `<path d="${pathD} " class="${className}" fill="none"${transform ? ` transform="${transform}"` : ""} />`;
-    } else {
+    } else if (type === "snip1rect" || type === "singlecornersnipped") {
+      const snipSize = Math.min(pw * 0.25, ph * 0.25);
+      const pathD = `M${px},${py} L${px + pw - snipSize},${py} L${px + pw},${py + snipSize} L${px + pw},${py + ph} L${px},${py + ph} Z`;
+      fillPath = hasFill
+        ? `<path d="${pathD} " fill="${fillColor}"${transform ? ` transform="${transform}"` : ""} />`
+        : "";
+      const className = getClassName(strokeColor, strokeWidth);
+      strokePath = `<path d="${pathD} " class="${className}" fill="none"${transform ? ` transform="${transform}"` : ""} />`;
+    } else if (type === "rect") {
       const pathD = `M${px},${py} L${px + pw},${py} L${px + pw},${py + ph} L${px},${py + ph} Z`;
       fillPath = hasFill
         ? `<path d="${pathD} " fill="${fillColor}"${transform ? ` transform="${transform}"` : ""} />`
@@ -989,7 +985,7 @@ stroke-linejoin:miter;
 
     const leftPx = left / EMU_PER_PIXEL;
     const topPx = top / EMU_PER_PIXEL;
-    return `<span style='mso-ignore:vglayout;position:absolute;z-index:1;margin-left:${left}px;margin-top:${top}px;width:${width}px;height:${height}px'>${svgContent}</span>`;
+    return `<span style='mso-ignore:vglayout;position:absolute;z-index:${shapeIndex + 1};margin-left:${left}px;margin-top:${top}px;width:${width}px;height:${height}px'>${svgContent}</span>`;
   }
 
   private generateShapesHtml(worksheet: Worksheet): string {
@@ -1153,25 +1149,49 @@ ${shapesSvg}
 
     const strokeWidth = (shape.lineWidth || 12700) / 12700;
 
-    const svgWidth = width.toFixed(2) + "pt";
-    const svgHeight = height.toFixed(2) + "pt";
+    const rotationRad = ((shape.rotation || 0) * Math.PI) / 180;
+    const cosR = Math.cos(rotationRad);
+    const sinR = Math.sin(rotationRad);
+
+    let svgWidth = width;
+    let svgHeight = height;
+
+    if (shape.rotation && shape.rotation !== 0) {
+      const absCos = Math.abs(cosR);
+      const absSin = Math.abs(sinR);
+      svgWidth = width * absCos + height * absSin;
+      svgHeight = width * absSin + height * absCos;
+      svgWidth = svgWidth.toFixed(2) + "pt";
+      svgHeight = svgHeight.toFixed(2) + "pt";
+    } else {
+      svgWidth = width.toFixed(2) + "pt";
+      svgHeight = height.toFixed(2) + "pt";
+    }
 
     let fillPath = "";
     let strokePath = "";
     let transform = "";
 
-    const px = 0.5;
-    const py = 0.5;
+    let translateX = 0;
+    let translateY = 0;
+
+    if (shape.rotation && shape.rotation !== 0) {
+      const absCos = Math.abs(cosR);
+      const absSin = Math.abs(sinR);
+      const newWidth = width * absCos + height * absSin;
+      const newHeight = width * absSin + height * absCos;
+      translateX = (newWidth - width) / 2;
+      translateY = (newHeight - height) / 2;
+    }
+
+    const px = 0.5 + translateX;
+    const py = 0.5 + translateY;
     const pw = width - 0.5;
     const ph = height - 0.5;
 
-    const rotationRad = ((shape.rotation || 0) * Math.PI) / 180;
-    const cosR = Math.cos(rotationRad);
-    const sinR = Math.sin(rotationRad);
-
     if (shape.rotation && shape.rotation !== 0) {
-      const cx = width / 2;
-      const cy = height / 2;
+      const cx = (width / scale + translateX * 2) / 2;
+      const cy = (height / scale + translateY * 2) / 2;
       transform = `matrix(${cosR},${sinR},${-sinR},${cosR},${cy * sinR + cx - cx * cosR},${cy - cx * sinR - cy * cosR})`;
     } else if (shape.flipV) {
       transform = `matrix(1,0,0,-1,0,${height})`;
@@ -1228,7 +1248,15 @@ ${shapesSvg}
         : "";
       const className = getClassName(strokeColor, strokeWidth);
       strokePath = `<path d="${pathD} " class="${className}" fill="none"${transform ? ` transform="${transform}"` : ""} />`;
-    } else {
+    } else if (type === "snip1rect" || type === "singlecornersnipped") {
+      const snipSize = Math.min(pw * 0.25, ph * 0.25);
+      const pathD = `M${px},${py} L${px + pw - snipSize},${py} L${px + pw},${py + snipSize} L${px + pw},${py + ph} L${px},${py + ph} Z`;
+      fillPath = hasFill
+        ? `<path d="${pathD} " fill="${fillColor}"${transform ? ` transform="${transform}"` : ""} />`
+        : "";
+      const className = getClassName(strokeColor, strokeWidth);
+      strokePath = `<path d="${pathD} " class="${className}" fill="none"${transform ? ` transform="${transform}"` : ""} />`;
+    } else if (type === "rect") {
       const pathD = `M${px},${py} L${px + pw},${py} L${px + pw},${py + ph} L${px},${py + ph} Z`;
       fillPath = hasFill
         ? `<path d="${pathD} " fill="${fillColor}"${transform ? ` transform="${transform}"` : ""} />`

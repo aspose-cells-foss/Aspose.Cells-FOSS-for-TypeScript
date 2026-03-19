@@ -112,6 +112,9 @@ export class ImpDrawing {
             const rotAttr = xfrm.getAttribute("rot");
             if (rotAttr) {
               rotation = parseInt(rotAttr, 10) / 60000;
+              if (rotation > 180) {
+                rotation = rotation - 360;
+              }
             }
           }
 
