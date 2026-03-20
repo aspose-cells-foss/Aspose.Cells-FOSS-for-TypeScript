@@ -188,8 +188,8 @@ export enum EncryptionType {
 
 export interface ShapeFill {
   type: "solid" | "gradient" | "none";
-  color?: string; // hex color or scheme color name (e.g., "accent1" or "#4472c4")
-  isSchemeColor?: boolean; // if true, color is a scheme color name
+  color?: string;
+  isSchemeColor?: boolean;
   gradientStops?: Array<{
     position: number;
     color: string;
@@ -202,29 +202,149 @@ export interface ShapeFill {
 
 export interface ShapeInfo {
   name: string;
-  type: string; // 'line','rect','ellipse','triangle','straightConnector1','bentConnector3', etc.
+  type: string;
   fromCol: number;
-  fromColOff?: number; // EMU
+  fromColOff?: number;
   fromRow: number;
-  fromRowOff?: number; // EMU
+  fromRowOff?: number;
   toCol: number;
   toColOff?: number;
   toRow: number;
   toRowOff?: number;
   fill?: ShapeFill;
-  fillColor?: string; // resolved hex color (legacy)
   lineColor?: string;
-  lineWidth?: number; // EMU
+  lineWidth?: number;
   flipV?: boolean;
   flipH?: boolean;
-  rotation?: number; // rotation in degrees (1/60000 degree units stored in Excel)
-  hasArrowEnd?: boolean;
-  isConnector?: boolean;
-  x?: number; // pre-calculated EMU position
+  rotation?: number;
+  x?: number;
   y?: number;
   width?: number;
   height?: number;
+  cx?: number;
+  cy?: number;
 }
+
+export type StraightConnectorShapeType = "straightConnector1" | "straightConnector2" | "straightConnector3" | "straightConnector";
+export type BentConnectorShapeType = "bentConnector1" | "bentConnector2" | "bentConnector3" | "bentConnector4" | "bentConnector5" | "elbowConnector";
+export type CurvedConnectorShapeType = "curvedConnector1" | "curvedConnector2" | "curvedConnector3" | "curvedConnector4" | "curvedConnector5";
+export type LineShapeType = "line";
+
+export interface StraightConnectorShapeInfo extends ShapeInfo {
+  type: StraightConnectorShapeType;
+  hasArrowStart?: boolean;
+  hasArrowEnd?: boolean;
+}
+
+export interface BentConnectorShapeInfo extends ShapeInfo {
+  type: BentConnectorShapeType;
+  hasArrowStart?: boolean;
+  hasArrowEnd?: boolean;
+}
+
+export interface CurvedConnectorShapeInfo extends ShapeInfo {
+  type: CurvedConnectorShapeType;
+  hasArrowStart?: boolean;
+  hasArrowEnd?: boolean;
+}
+
+export interface LineShapeInfo extends ShapeInfo {
+  type: LineShapeType;
+  hasArrowStart?: boolean;
+  hasArrowEnd?: boolean;
+}
+
+export type AllConnectorShapeInfo = StraightConnectorShapeInfo | BentConnectorShapeInfo | CurvedConnectorShapeInfo | LineShapeInfo;
+
+export type RectangleShapeType = "rect" | "rectangle";
+export interface RectangleShapeInfo extends ShapeInfo {
+  type: RectangleShapeType;
+}
+
+export type EllipseShapeType = "ellipse" | "oval";
+export interface EllipseShapeInfo extends ShapeInfo {
+  type: EllipseShapeType;
+}
+
+export type TriangleShapeType = "triangle" | "rightTriangle";
+export type QuadrilateralShapeType = "parallelogram" | "trapezoid" | "diamond" | "pentagon" | "hexagon" | "heptagon" | "octagon" | "decagon" | "dodecagon" | "nonIsoscelesTrapezoid";
+export type PolygonShapeType = TriangleShapeType | QuadrilateralShapeType;
+
+export interface TriangleShapeInfo extends ShapeInfo {
+  type: TriangleShapeType;
+}
+
+export interface QuadrilateralShapeInfo extends ShapeInfo {
+  type: QuadrilateralShapeType;
+}
+
+export interface PolygonShapeInfo extends ShapeInfo {
+  type: PolygonShapeType;
+}
+
+export type ArrowShapeType = "arrow" | "rightArrow" | "leftArrow" | "upArrow" | "downArrow" | "leftRightArrow" | "upDownArrow" | "quadrilateralArrow" | "pentagonArrow";
+export interface ArrowShapeInfo extends ShapeInfo {
+  type: ArrowShapeType;
+}
+
+export type StarShapeType = "star4" | "star5" | "star6" | "star7" | "star8" | "star10" | "star12" | "star16" | "star24" | "star32" | "starBurst";
+export interface StarShapeInfo extends ShapeInfo {
+  type: StarShapeType;
+}
+
+export type RectangleVariantShapeType = "snip1Rect" | "singleCornerSnipped" | "snip2Same" | "snip2Diag" | "snip4Same" | "snip4Diag" | "round1Rect" | "round2Same" | "round2Diag" | "round4Same" | "round4Diag";
+export interface RectangleVariantShapeInfo extends ShapeInfo {
+  type: RectangleVariantShapeType;
+}
+
+export type CircleVariantShapeType = "pie" | "pieWedge" | "quarterCircle" | "partialCircle" | "halfCircle" | "threeQuarterCircle" | "donut";
+export interface CircleVariantShapeInfo extends ShapeInfo {
+  type: CircleVariantShapeType;
+}
+
+export type BraceShapeType = "brace" | "bracket";
+export interface BraceShapeInfo extends ShapeInfo {
+  type: BraceShapeType;
+}
+
+export type MathSymbolShapeType = "plus" | "mathPlus" | "mathMinus" | "mathMultiply" | "mathDivide" | "mathEqual" | "mathNotEqual";
+export interface MathSymbolShapeInfo extends ShapeInfo {
+  type: MathSymbolShapeType;
+}
+
+export type SpecialShapeType = 
+  | "ribbon" | "ribbon2" | "chevron" | "chord" | "cloud" | "cloudCallout" 
+  | "sun" | "moon" | "doubleWave" | "explosion" | "lightningBolt" 
+  | "heart" | "pictureFrame" | "tetris" | "smileyFace" | "flowChartProcess";
+export interface SpecialShapeInfo extends ShapeInfo {
+  type: SpecialShapeType;
+}
+
+export type SealShapeType = "irregularSeal1" | "irregularSeal2" | "irregularSeal3" | "irregularSeal4" | "irregularSeal5" | "irregularSeal6" | "irregularSeal7" | "irregularSeal8" | "irregularSeal9" | "irregularSeal10";
+export interface SealShapeInfo extends ShapeInfo {
+  type: SealShapeType;
+}
+
+export type Shape3DType = "cube" | "cylinder" | "cylinderSolid" | "prism" | "prismRight";
+export interface Shape3DInfo extends ShapeInfo {
+  type: Shape3DType;
+}
+
+export type BasicShapeSubType = 
+  | RectangleShapeType 
+  | EllipseShapeType 
+  | PolygonShapeType 
+  | ArrowShapeType 
+  | StarShapeType
+  | RectangleVariantShapeType
+  | CircleVariantShapeType
+  | BraceShapeType
+  | MathSymbolShapeType
+  | SpecialShapeType
+  | SealShapeType
+  | Shape3DType;
+
+export type BasicShapeInfoType = { type: BasicShapeSubType } & ShapeInfo;
 
 export type ChartType =
   | "bar"
@@ -269,3 +389,5 @@ export interface ChartInfo extends ShapeInfo {
   toColOff?: number;
   sheetIndex: number;
 }
+
+export type AllShapeInfo = AllConnectorShapeInfo | BasicShapeInfoType | ChartInfo;

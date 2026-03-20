@@ -4,7 +4,7 @@ export async function testAutoFilter() {
   console.log("Testing auto filter...");
 
   const workbook = new Workbook();
-  const worksheet = workbook.worksheet;
+  const worksheet = workbook.worksheets[0]!;
 
   worksheet.putValue("A1", "Name");
   worksheet.putValue("B1", "Age");
@@ -30,7 +30,7 @@ export async function testAutoFilter() {
 
 export async function testAutoFilterWithData() {
   const workbook = new Workbook();
-  const worksheet = workbook.worksheet;
+  const worksheet = workbook.worksheets[0]!;
 
   for (let i = 0; i < 10; i++) {
     worksheet.putValue(`A${i + 1}`, `Item ${i + 1}`);

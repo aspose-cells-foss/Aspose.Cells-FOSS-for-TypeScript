@@ -4,7 +4,7 @@ export function testhtmlExport() {
   console.log("Testing html export...");
 
   const workbook = new Workbook();
-  const worksheet = workbook.worksheet;
+  const worksheet = workbook.worksheets[0]!;
 
   worksheet.putValue("A1", "Name");
   worksheet.putValue("B1", "Age");
@@ -21,7 +21,7 @@ export async function testhtmlImport() {
   console.log("Testing html import...");
 
   const workbook = await Workbook.load("outputfiles/test_html_export.html");
-  const worksheet = workbook.worksheet;
+  const worksheet = workbook.worksheets[0]!;
 
   console.log("A1:", worksheet.getCell(0, 0)?.value);
   console.log("B1:", worksheet.getCell(0, 1)?.value);
@@ -32,7 +32,7 @@ export async function testJsonExport() {
   console.log("Testing JSON export...");
 
   const workbook = new Workbook();
-  const worksheet = workbook.worksheet;
+  const worksheet = workbook.worksheets[0]!;
 
   worksheet.putValue("A1", "Name");
   worksheet.putValue("B1", "Age");
@@ -52,7 +52,7 @@ export async function testMarkdownExport() {
   console.log("Testing Markdown export...");
 
   const workbook = new Workbook();
-  const worksheet = workbook.worksheet;
+  const worksheet = workbook.worksheets[0]!;
 
   worksheet.putValue("A1", "Name");
   worksheet.putValue("B1", "Age");

@@ -4,7 +4,7 @@ export async function testDataValidation() {
   console.log("Testing data validation...");
 
   const workbook = new Workbook();
-  const worksheet = workbook.worksheet;
+  const worksheet = workbook.worksheets[0]!;
 
   worksheet.putValue("A1", "Option 1");
   worksheet.putValue("A2", "Option 2");
@@ -21,7 +21,7 @@ export async function testDataValidation() {
 
 export async function testNumberValidation() {
   const workbook = new Workbook();
-  const worksheet = workbook.worksheet;
+  const worksheet = workbook.worksheets[0]!;
 
   worksheet.putValue("A1", 10);
   worksheet.putValue("A2", 20);

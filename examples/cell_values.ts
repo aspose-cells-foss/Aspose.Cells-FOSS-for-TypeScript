@@ -4,7 +4,7 @@ export async function testCellValues() {
   console.log("Testing cell values...");
 
   const workbook = new Workbook();
-  const worksheet = workbook.worksheets[0];
+  const worksheet = workbook.worksheets[0]!;
 
   const intValues = [0, 1, -1, 42, 1000, -999];
   for (let i = 0; i < intValues.length; i++) {
@@ -62,7 +62,7 @@ export async function testCellValues() {
 
 export async function testMixedValues() {
   const workbook = new Workbook();
-  const worksheet = workbook.worksheets[0];
+  const worksheet = workbook.worksheets[0]!;
 
   worksheet.putValue("A1", 42);
   worksheet.putValue("A2", 3.14159);
@@ -81,7 +81,7 @@ export async function testMixedValues() {
   console.log("Saved to outputfiles/test_mixed_values.xlsx");
 
   const loaded = await Workbook.load("outputfiles/test_mixed_values.xlsx");
-  const ws = loaded.worksheets[0];
+  const ws = loaded.worksheets[0]!;
   console.log("Loaded A1:", ws.getCell(0, 0)?.value);
   console.log("Loaded A3:", ws.getCell(2, 0)?.value);
   console.log("Loaded A4 formula:", ws.getCell(3, 0)?.formula);
@@ -89,7 +89,7 @@ export async function testMixedValues() {
 
 export async function testEdgeCases() {
   const workbook = new Workbook();
-  const worksheet = workbook.worksheets[0];
+  const worksheet = workbook.worksheets[0]!;
 
   const cell1 = worksheet.getCell2("A1");
   console.log("None value:", cell1.value);

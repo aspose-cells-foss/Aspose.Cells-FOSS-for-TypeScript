@@ -4,7 +4,7 @@ export async function testFontSettings() {
   console.log("Testing font settings...");
 
   const workbook = new Workbook();
-  const worksheet = workbook.worksheet;
+  const worksheet = workbook.worksheets[0]!;
   const style = new Style();
 
   style.setFontName("Arial");
@@ -25,7 +25,7 @@ export async function testFillSettings() {
   console.log("Testing fill settings...");
 
   const workbook = new Workbook();
-  const worksheet = workbook.worksheet;
+  const worksheet = workbook.worksheets[0]!;
   const style = new Style();
 
   style.setForegroundColor("FFFF00");
@@ -43,7 +43,7 @@ export async function testBorderSettings() {
   console.log("Testing border settings...");
 
   const workbook = new Workbook();
-  const worksheet = workbook.worksheet;
+  const worksheet = workbook.worksheets[0]!;
   const style = new Style();
 
   style.getBorder().left = { style: "thick", color: "FF0000" };
@@ -63,7 +63,7 @@ export async function testAlignment() {
   console.log("Testing alignment...");
 
   const workbook = new Workbook();
-  const worksheet = workbook.worksheet;
+  const worksheet = workbook.worksheets[0]!;
   const style = new Style();
 
   style.setHorizontalAlignment("center");

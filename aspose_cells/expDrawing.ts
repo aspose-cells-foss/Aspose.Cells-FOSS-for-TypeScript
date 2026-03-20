@@ -1,4 +1,4 @@
-import { ShapeInfo, ShapeFill } from "./types";
+import { ShapeInfo, ShapeFill, AllConnectorShapeInfo } from "./types";
 import { escapeXml } from "./util";
 
 export class ExpDrawing {
@@ -38,13 +38,10 @@ export class ExpDrawing {
 
     const type = shape.type;
     const typeLower = type.toLowerCase();
-    const isConnector =
-      shape.isConnector ||
-      typeLower === "line" ||
-      typeLower.includes("connector");
+    const isConnector = typeLower === "line" || typeLower.includes("connector");
 
     const shapeType = ExpDrawing.getDrawingShapeType(type);
-    const fillXml = ExpDrawing.shapeFillToXml(shape.fill, shape.fillColor);
+    const fillXml = ExpDrawing.shapeFillToXml(shape.fill, "#ffffff");
     const lineWidth = shape.lineWidth || 12700;
 
     const x = shape.x ?? 0;
@@ -58,29 +55,24 @@ export class ExpDrawing {
 
     let anchor = `<xdr:twoCellAnchor><xdr:from><xdr:col>${fromCol}</xdr:col><xdr:colOff>${fromColOff}</xdr:colOff><xdr:row>${fromRow}</xdr:row><xdr:rowOff>${fromRowOff}</xdr:rowOff></xdr:from><xdr:to><xdr:col>${toCol}</xdr:col><xdr:colOff>${toColOff}</xdr:colOff><xdr:row>${toRow}</xdr:row><xdr:rowOff>${toRowOff}</xdr:rowOff></xdr:to>`;
 
-    const tailEnd = shape.hasArrowEnd
-      ? '<a:ln><a:tailEnd type="triangle"/></a:ln>'
-      : "";
     const lnStyle =
       lineWidth && lineWidth !== 12700 ? `<a:ln w="${lineWidth}"/>` : "";
 
+    const tailEnd = ExpDrawing.isConnectorShape(shape) && shape.hasArrowEnd
+      ? '<a:ln><a:tailEnd type="triangle"/></a:ln>'
+      : "";
+
     if (isConnector) {
       anchor += `<xdr:cxnSp macro=""><xdr:nvCxnSpPr><xdr:cNvPr id="${index + 3}" name="${escapeXml(shape.name)}">${extLst}</xdr:cNvPr><xdr:cNvCxnSpPr/></xdr:nvCxnSpPr><xdr:spPr><a:xfrm${flipV}><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="${shapeType}"><a:avLst/></a:prstGeom>${lnStyle}${tailEnd}</xdr:spPr><xdr:style>`;
+      anchor += `<a:lnRef idx="1"><a:schemeClr val="accent1"/></a:lnRef><a:fillRef idx="0"><a:schemeClr val="accent1"/></a:fillRef><a:effectRef idx="0"><a:schemeClr val="accent1"/></a:effectRef><a:fontRef idx="minor"><a:schemeClr val="tx1"/></a:fontRef></xdr:style>`;
+      anchor += "</xdr:cxnSp>";
     } else {
       anchor += `<xdr:sp macro="" textlink=""><xdr:nvSpPr><xdr:cNvPr id="${index + 3}" name="${escapeXml(shape.name)}">${extLst}</xdr:cNvPr><xdr:cNvSpPr/></xdr:nvSpPr><xdr:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="${shapeType}"><a:avLst/></a:prstGeom>${fillXml}</xdr:spPr><xdr:style>`;
-    }
-
-    if (isConnector) {
-      anchor += `<a:lnRef idx="1"><a:schemeClr val="accent1"/></a:lnRef><a:fillRef idx="0"><a:schemeClr val="accent1"/></a:fillRef><a:effectRef idx="0"><a:schemeClr val="accent1"/></a:effectRef><a:fontRef idx="minor"><a:schemeClr val="tx1"/></a:fontRef></xdr:style>`;
-    } else {
       anchor += `<a:lnRef idx="2"><a:schemeClr val="accent1"><a:shade val="15000"/></a:schemeClr></a:lnRef><a:fillRef idx="1"><a:schemeClr val="accent1"/></a:fillRef><a:effectRef idx="0"><a:schemeClr val="accent1"/></a:effectRef><a:fontRef idx="minor"><a:schemeClr val="lt1"/></a:fontRef></xdr:style>`;
-    }
-
-    if (!isConnector) {
       anchor += `<xdr:txBody><a:bodyPr vertOverflow="clip" horzOverflow="clip" rtlCol="0" anchor="t"/><a:lstStyle/><a:p><a:pPr algn="l"/><a:endParaRPr lang="en-US" sz="1100"/></a:p></xdr:txBody>`;
+      anchor += "</xdr:sp>";
     }
 
-    anchor += isConnector ? "</xdr:cxnSp>" : "</xdr:sp>";
     anchor += "<xdr:clientData/></xdr:twoCellAnchor>";
 
     return anchor;
@@ -277,5 +269,10 @@ export class ExpDrawing {
 
     const color = ExpDrawing.colorToScheme(fallbackColor || "#ffffff");
     return `<a:solidFill>${color}</a:solidFill>`;
+  }
+
+  static isConnectorShape(shape: ShapeInfo): shape is AllConnectorShapeInfo {
+    const type = shape.type.toLowerCase();
+    return type === "line" || type.includes("connector");
   }
 }

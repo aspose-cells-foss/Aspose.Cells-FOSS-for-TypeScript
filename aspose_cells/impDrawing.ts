@@ -1,4 +1,4 @@
-import { ShapeInfo, ShapeFill } from "./types";
+import { ShapeInfo, ShapeFill, StraightConnectorShapeInfo, BentConnectorShapeInfo, CurvedConnectorShapeInfo, LineShapeInfo } from "./types";
 import { readZipEntry as readZipEntryUtil } from "./util";
 import { DOMParser } from "@xmldom/xmldom";
 
@@ -80,14 +80,15 @@ export class ImpDrawing {
       );
 
       let shapeType = "rect";
-      let fillColor = "#ffffff";
       let lineColor = "#000000";
       let lineWidth = 12700;
+      let hasArrowStart = false;
       let hasArrowEnd = false;
-      let isConnector = false;
       let flipV = false;
       let flipH = false;
       let rotation = 0;
+      let cx: number | undefined;
+      let cy: number | undefined;
 
       const sp = anchor.getElementsByTagName("xdr:sp")[0];
       const cxnSp = anchor.getElementsByTagName("xdr:cxnSp")[0];
@@ -115,6 +116,13 @@ export class ImpDrawing {
               if (rotation > 180) {
                 rotation = rotation - 360;
               }
+            }
+            const ext = xfrm.getElementsByTagName("a:ext")[0];
+            if (ext) {
+              const cxAttr = ext.getAttribute("cx");
+              const cyAttr = ext.getAttribute("cy");
+              if (cxAttr) cx = parseInt(cxAttr, 10);
+              if (cyAttr) cy = parseInt(cyAttr, 10);
             }
           }
 
@@ -176,20 +184,21 @@ export class ImpDrawing {
           }
         }
 
+        const headEnd = (sp || cxnSp)?.getElementsByTagName("a:headEnd")[0];
+        if (headEnd) {
+          hasArrowStart = true;
+        }
+
         const tailEnd = (sp || cxnSp)?.getElementsByTagName("a:tailEnd")[0];
         if (tailEnd) {
           hasArrowEnd = true;
-        }
-
-        if (cxnSp) {
-          isConnector = true;
         }
       }
 
       const nameEl = anchor.getElementsByTagName("xdr:cNvPr")[0];
       const name = nameEl?.getAttribute("name") || `Shape ${i + 1}`;
 
-      const shape: ShapeInfo = {
+      const baseShape = {
         name,
         type: shapeType,
         fromCol,
@@ -201,17 +210,37 @@ export class ImpDrawing {
         toRow,
         toRowOff,
         fill,
-        fillColor,
+        cx,
+        cy,
         lineColor,
         lineWidth,
         flipV,
         flipH,
         rotation,
-        hasArrowEnd,
-        isConnector,
       };
 
-      shapes.push(shape);
+      const isConnector = cxnSp !== undefined || shapeType === "line" || shapeType.includes("Connector");
+      
+      if (isConnector) {
+        const connectorShape = {
+          ...baseShape,
+          hasArrowStart,
+          hasArrowEnd,
+        };
+        
+        const typeLower = shapeType.toLowerCase();
+        if (typeLower === "line") {
+          shapes.push(connectorShape as LineShapeInfo);
+        } else if (typeLower.includes("bent") || typeLower.includes("elbow")) {
+          shapes.push(connectorShape as BentConnectorShapeInfo);
+        } else if (typeLower.includes("curved")) {
+          shapes.push(connectorShape as CurvedConnectorShapeInfo);
+        } else {
+          shapes.push(connectorShape as StraightConnectorShapeInfo);
+        }
+      } else {
+        shapes.push(baseShape as ShapeInfo);
+      }
     }
   }
 

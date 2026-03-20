@@ -4,7 +4,7 @@ export async function testCellProtection() {
   console.log("Testing cell protection...");
 
   const workbook = new Workbook();
-  const worksheet = workbook.worksheet;
+  const worksheet = workbook.worksheets[0]!;
 
   const style = new Style();
   style.setLocked(true);

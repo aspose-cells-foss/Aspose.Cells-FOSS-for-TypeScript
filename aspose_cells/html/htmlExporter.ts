@@ -1,7 +1,7 @@
 import { Workbook } from "../workbook";
 import { Worksheet } from "../worksheet";
 import { join } from "path";
-import type { ShapeInfo, ChartInfo } from "../types";
+import type { ShapeInfo, ChartInfo, AllConnectorShapeInfo } from "../types";
 import { ChartRenderer } from "./chartRenderer";
 
 const EMU_PER_PIXEL = 914400 / 96;
@@ -787,13 +787,6 @@ ${tableHtml}
    </linearGradient>`;
         fillColor = `url(#${gradientId})`;
       }
-    } else if (
-      shape.fillColor &&
-      shape.fillColor !== "#ffffff" &&
-      shape.fillColor !== "white"
-    ) {
-      hasFill = true;
-      fillColor = shape.fillColor.toUpperCase();
     }
 
     const type = shape.type.toLowerCase();
@@ -826,7 +819,7 @@ ${tableHtml}
       originalHeight = (width / scale) * absSin + (height / scale) * absCos + 1;
     }
 
-    const extraPadding = shape.hasArrowEnd ? 35 : 0;
+    const extraPadding = this.isConnectorShape(shape) && shape.hasArrowEnd ? 35 : 0;
     const svgWidth = (originalWidth + extraPadding).toFixed(2) + "pt";
     const svgHeight = (originalHeight + extraPadding).toFixed(2) + "pt";
 
@@ -880,7 +873,7 @@ ${tableHtml}
         strokePath = `<path d="M${left / scale},${top / scale} L${right / scale},${bottom / scale} " class="${className}" fill="none" transform="matrix(1,0,0,1,-0.000007629,-0.000007629)" />`;
       }
 
-      if (shape.hasArrowEnd) {
+      if (this.isConnectorShape(shape) && shape.hasArrowEnd) {
         const dx = right - left;
         const dy = bottom - top;
         const angle = Math.atan2(dy, dx);
@@ -1126,13 +1119,6 @@ ${shapesSvg}
   </linearGradient>`;
         fillColor = `url(#${gradientId})`;
       }
-    } else if (
-      shape.fillColor &&
-      shape.fillColor !== "#ffffff" &&
-      shape.fillColor !== "white"
-    ) {
-      hasFill = true;
-      fillColor = shape.fillColor;
     }
 
     const type = shape.type.toLowerCase();
@@ -1153,8 +1139,8 @@ ${shapesSvg}
     const cosR = Math.cos(rotationRad);
     const sinR = Math.sin(rotationRad);
 
-    let svgWidth = width;
-    let svgHeight = height;
+    let svgWidth: string | number = width;
+    let svgHeight: string | number = height;
 
     if (shape.rotation && shape.rotation !== 0) {
       const absCos = Math.abs(cosR);
@@ -1203,7 +1189,7 @@ ${shapesSvg}
       const className = getClassName(strokeColor, strokeWidth);
       strokePath = `<path d="M${x},${y} L${right},${bottom} " class="${className}" fill="none" transform="matrix(1,0,0,1,-0.000007629,-0.000007629)" />`;
 
-      if (shape.hasArrowEnd) {
+      if (this.isConnectorShape(shape) && shape.hasArrowEnd) {
         const dx = right - x;
         const dy = bottom - y;
         const angle = Math.atan2(dy, dx);
@@ -1314,5 +1300,10 @@ stroke-linejoin:miter;
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&apos;");
+  }
+
+  private isConnectorShape(shape: ShapeInfo): shape is AllConnectorShapeInfo {
+    const type = shape.type.toLowerCase();
+    return type === "line" || type.includes("connector");
   }
 }

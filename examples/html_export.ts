@@ -9,7 +9,7 @@ export async function testHtmlExport() {
   console.log("Testing HTML export...");
 
   const workbook = new Workbook();
-  const worksheet = workbook.worksheet;
+  const worksheet = workbook.worksheets[0]!;
 
   worksheet.putValue("A1", "Name");
   worksheet.putValue("B1", "Age");
@@ -48,8 +48,8 @@ export async function testHtmlImport() {
   console.log("Rows:", doc.tables[0]?.rows);
 
   const workbook = doc.toWorkbook();
-  console.log("Worksheets:", workbook.worksheetCount);
-  console.log("A1:", workbook.worksheet.getCell(0, 0)?.value);
+  console.log("Worksheets:", workbook.worksheets.length);
+  console.log("A1:", workbook.worksheets[0]!.getCell(0, 0)?.value);
 }
 
 // if (import.meta.main) {
