@@ -150,6 +150,9 @@ export class ChartLoader {
           toColOff = 0,
           toRowOff = 0;
 
+        let originalX = 0;
+        let originalY = 0;
+
         if (twoCellAnchor && twoCellAnchor.nodeName === "xdr:twoCellAnchor") {
           const from = twoCellAnchor.getElementsByTagName("xdr:from")[0];
           const to = twoCellAnchor.getElementsByTagName("xdr:to")[0];
@@ -173,6 +176,17 @@ export class ChartLoader {
           }
         }
 
+        const xfrmList = frame.getElementsByTagName("a:xfrm");
+        if (xfrmList.length > 0) {
+          const xfrm = xfrmList[0];
+          const offList = xfrm.getElementsByTagName("a:off");
+          if (offList.length > 0) {
+            const off = offList[0];
+            originalX = parseInt(off.getAttribute("x") || "0", 10);
+            originalY = parseInt(off.getAttribute("y") || "0", 10);
+          }
+        }
+
         this.parseChart(
           chartDoc,
           sheetIndex,
@@ -184,6 +198,8 @@ export class ChartLoader {
           fromRowOff,
           toColOff,
           toRowOff,
+          originalX,
+          originalY,
         );
       }
     }
@@ -205,6 +221,8 @@ export class ChartLoader {
     fromRowOff: number,
     toColOff: number,
     toRowOff: number,
+    originalX: number = 0,
+    originalY: number = 0,
   ) {
     const chartSpace = chartDoc.getElementsByTagName("c:chartSpace")[0];
     if (!chartSpace) return;
@@ -439,6 +457,8 @@ export class ChartLoader {
       fromRowOff: fromRowOff || 0,
       toColOff: toColOff || 0,
       toRowOff: toRowOff || 0,
+      originalX,
+      originalY,
       sheetIndex,
     });
   }

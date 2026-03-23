@@ -8,6 +8,7 @@ import type {
   ConditionalFormatRule,
   ShapeInfo,
   ChartInfo,
+  ImageInfo,
 } from "./types";
 import { cellRef, parseCellRef, parseRange } from "./util";
 
@@ -31,7 +32,9 @@ export class Worksheet {
   private _mergedCells: string[] = [];
   private _columnWidths: Map<number, number> = new Map();
   private _rowHeights: Map<number, number> = new Map();
+  private _hiddenRows: Set<number> = new Set<number>();
   private _shapes: ShapeInfo[] = [];
+  private _images: ImageInfo[] = [];
   private _defaultColumnWidth?: number;
   private _defaultRowHeight?: number;
 
@@ -166,6 +169,18 @@ export class Worksheet {
     return this._rowHeights.get(row);
   }
 
+  setRowHidden(row: number, hidden: boolean) {
+    if (hidden) {
+      this._hiddenRows.add(row);
+    } else {
+      this._hiddenRows.delete(row);
+    }
+  }
+
+  isRowHidden(row: number): boolean {
+    return this._hiddenRows.has(row);
+  }
+
   set defaultColumnWidth(width: number | undefined) {
     this._defaultColumnWidth = width;
   }
@@ -183,10 +198,9 @@ export class Worksheet {
   }
 
   setCellStyle(cellRef: string, style: any) {
-    const cell = this.getCellByRef(cellRef);
-    if (cell) {
-      cell.setStyle(style);
-    }
+    const { row, col } = parseCellRef(cellRef);
+    const cell = this._cells.getOrCreate(row, col);
+    cell.setStyle(style);
   }
 
   addShape(shape: ShapeInfo) {
@@ -201,14 +215,43 @@ export class Worksheet {
     return this._shapes.filter((s): s is ChartInfo => "chartType" in s);
   }
 
+  addImage(image: ImageInfo) {
+    this._images.push(image);
+  }
+
+  get images(): ImageInfo[] {
+    return this._images;
+  }
+
   toXml(drawingIndex: number = 0): string {
     const cols: string[] = [];
-    for (const [col, width] of this._columnWidths) {
-      // Convert from stored pixel width to Excel character width
-      const excelWidth = Math.round((width / 7) * 100) / 100;
-      cols.push(
-        `<col min="${col + 1}" max="${col + 1}" width="${excelWidth}" customWidth="1"/>`,
-      );
+    if (this._columnWidths.size > 0) {
+      const sortedCols = Array.from(this._columnWidths.entries()).sort((a, b) => a[0] - b[0]);
+      
+      let groupStart = 0;
+      let groupWidth = sortedCols[0][1];
+      
+      for (let i = 1; i <= sortedCols.length; i++) {
+        const currentWidth = i < sortedCols.length ? sortedCols[i][1] : -1;
+        const prevWidth = sortedCols[i - 1][1];
+        
+        if (currentWidth !== prevWidth || i === sortedCols.length) {
+          const minCol = sortedCols[groupStart][0] + 1;
+          const maxCol = sortedCols[i - 1][0] + 1;
+          const excelWidth = Math.round((prevWidth / 7) * 100) / 100;
+          
+          if (minCol === maxCol) {
+            cols.push(`<col min="${minCol}" max="${maxCol}" width="${excelWidth}" customWidth="1"/>`);
+          } else {
+            cols.push(`<col min="${minCol}" max="${maxCol}" width="${excelWidth}" customWidth="1"/>`);
+          }
+          
+          if (i < sortedCols.length) {
+            groupStart = i;
+            groupWidth = currentWidth;
+          }
+        }
+      }
     }
 
     const rows = new Map<number, Cell[]>();
@@ -224,6 +267,11 @@ export class Worksheet {
       if (cell.row > maxRow) maxRow = cell.row;
       if (cell.col < minCol) minCol = cell.col;
       if (cell.col > maxCol) maxCol = cell.col;
+    }
+
+    for (const rowNum of this._rowHeights.keys()) {
+      if (rowNum < minRow) minRow = rowNum;
+      if (rowNum > maxRow) maxRow = rowNum;
     }
 
     if (rows.size === 0) {
@@ -251,16 +299,22 @@ export class Worksheet {
     const sheetViews = `<sheetViews><sheetView workbookViewId="0"/></sheetViews>`;
     const sheetFormatPr = `<sheetFormatPr defaultRowHeight="${this._defaultRowHeight || 12.5}" defaultColWidth="${this._defaultColumnWidth || 8}" x14ac:dyDescent="0.25"/>`;
     let sheetDataWithAttrs = "";
-    for (const [rowNum, rowCells] of rows) {
+    for (let rowNum = minRow; rowNum <= maxRow; rowNum++) {
+      const rowCells = rows.get(rowNum) || [];
       const span = `${minCol + 1}:${maxCol + 1}`;
       const rowHeight = this._rowHeights.get(rowNum);
       const heightAttr = rowHeight ? ` ht="${rowHeight}" customHeight="1"` : "";
-      sheetDataWithAttrs += `<row r="${rowNum + 1}" spans="${span}" x14ac:dyDescent="0.25"${heightAttr}>`;
+      const hiddenAttr = this._hiddenRows.has(rowNum) ? ' hidden="1"' : "";
+      sheetDataWithAttrs += `<row r="${rowNum + 1}" spans="${span}" x14ac:dyDescent="0.25"${heightAttr}${hiddenAttr}>`;
       const sortedCells = rowCells.sort((a, b) => a.col - b.col);
       for (const cell of sortedCells) {
         sheetDataWithAttrs += cell.toXml();
       }
       sheetDataWithAttrs += "</row>";
+    }
+
+    if (minRow === Infinity) {
+      sheetDataWithAttrs = "";
     }
 
     let drawingRel = "";

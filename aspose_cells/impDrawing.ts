@@ -92,6 +92,7 @@ export class ImpDrawing {
 
       const sp = anchor.getElementsByTagName("xdr:sp")[0];
       const cxnSp = anchor.getElementsByTagName("xdr:cxnSp")[0];
+      const pic = anchor.getElementsByTagName("xdr:pic")[0];
       const graphicFrame = anchor.getElementsByTagName("xdr:graphicFrame")[0];
 
       if (graphicFrame) {
@@ -99,6 +100,29 @@ export class ImpDrawing {
       }
 
       let fill: ShapeFill | undefined;
+      let xfrmX: number | undefined;
+      let xfrmY: number | undefined;
+      let picCx: number | undefined;
+      let picCy: number | undefined;
+
+      if (pic) {
+        const spPr = pic.getElementsByTagName("xdr:spPr")[0];
+        if (spPr) {
+          const xfrm = spPr.getElementsByTagName("a:xfrm")[0];
+          if (xfrm) {
+            const off = xfrm.getElementsByTagName("a:off")[0];
+            if (off) {
+              xfrmX = parseInt(off.getAttribute("x") || "0", 10);
+              xfrmY = parseInt(off.getAttribute("y") || "0", 10);
+            }
+            const ext = xfrm.getElementsByTagName("a:ext")[0];
+            if (ext) {
+              picCx = parseInt(ext.getAttribute("cx") || "0", 10);
+              picCy = parseInt(ext.getAttribute("cy") || "0", 10);
+            }
+          }
+        }
+      }
 
       if (sp || cxnSp) {
         const spPr = (sp || cxnSp)?.getElementsByTagName("xdr:spPr")[0];
@@ -217,6 +241,10 @@ export class ImpDrawing {
         flipV,
         flipH,
         rotation,
+        xfrmX,
+        xfrmY,
+        picCx,
+        picCy,
       };
 
       const isConnector = cxnSp !== undefined || shapeType === "line" || shapeType.includes("Connector");

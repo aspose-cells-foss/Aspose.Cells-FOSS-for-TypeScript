@@ -1,17 +1,56 @@
-import { ShapeInfo, ShapeFill, AllConnectorShapeInfo } from "./types";
+import { ShapeInfo, ShapeFill, AllConnectorShapeInfo, ImageInfo } from "./types";
 import { escapeXml } from "./util";
 
 export class ExpDrawing {
-  static generateDrawingXml(shapes: ShapeInfo[]): string {
-    let xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">`;
+  static generateDrawingXml(shapes: ShapeInfo[], sheetImages: ImageInfo[] = [], imageMap: Map<string, number> = new Map()): string {
+    let xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:a14="http://schemas.microsoft.com/office/drawing/2010/main">`;
 
-    for (let i = 0; i < shapes.length; i++) {
-      const shape = shapes[i];
-      xml += ExpDrawing.shapeToDrawingXml(shape, i);
+    const sortedShapes = [...shapes].sort((a, b) => {
+      const aZ = (a as any).zIndex || 0;
+      const bZ = (b as any).zIndex || 0;
+      if (aZ !== bZ) return aZ - bZ;
+      const aCol = (a as any).fromCol ?? 0;
+      const bCol = (b as any).fromCol ?? 0;
+      return aCol - bCol;
+    });
+
+    for (let i = 0; i < sortedShapes.length; i++) {
+      const shape = sortedShapes[i];
+      if ((shape as any).type === "picture") {
+        xml += `<xdr:twoCellAnchor editAs="oneCell">`;
+        xml += ExpDrawing.pictureToDrawingXml(shape as any, i);
+        xml += `<xdr:clientData/></xdr:twoCellAnchor>`;
+      } else {
+        xml += `<xdr:twoCellAnchor>`;
+        xml += ExpDrawing.shapeToDrawingXml(shape, i);
+        xml += `</xdr:twoCellAnchor>`;
+      }
     }
 
     xml += "</xdr:wsDr>";
     return xml;
+  }
+
+  private static pictureToDrawingXml(shape: any, sortedIdx: number): string {
+    const fromCol = shape.fromCol ?? 0;
+    const fromColOff = shape.fromColOff ?? 0;
+    const fromRow = shape.fromRow ?? 0;
+    const fromRowOff = shape.fromRowOff ?? 0;
+    const toCol = shape.toCol ?? 0;
+    const toColOff = shape.toColOff ?? 0;
+    const toRow = shape.toRow ?? 0;
+    const toRowOff = shape.toRowOff ?? 0;
+
+    const cNvId = sortedIdx + 3;
+    const embedRid = sortedIdx + 1;
+
+    const cx = shape.width ?? 64 * 9144;
+    const cy = shape.height ?? 64 * 9144;
+
+    const uniqueId = ExpDrawing.generateUniqueId();
+    const extLst = `<a:extLst><a:ext uri="{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}"><a16:creationId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" id="${uniqueId}"/></a:ext></a:extLst>`;
+
+    return `<xdr:from><xdr:col>${fromCol}</xdr:col><xdr:colOff>${fromColOff}</xdr:colOff><xdr:row>${fromRow}</xdr:row><xdr:rowOff>${fromRowOff}</xdr:rowOff></xdr:from><xdr:to><xdr:col>${toCol}</xdr:col><xdr:colOff>${toColOff}</xdr:colOff><xdr:row>${toRow}</xdr:row><xdr:rowOff>${toRowOff}</xdr:rowOff></xdr:to><xdr:pic><xdr:nvPicPr><xdr:cNvPr id="${cNvId}" name="${escapeXml(shape.name || "Picture")}">${extLst}</xdr:cNvPr><xdr:cNvPicPr><a:picLocks noChangeAspect="1"/></xdr:cNvPicPr></xdr:nvPicPr><xdr:blipFill><a:blip r:embed="rId${embedRid}"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr><a:xfrm><a:off x="${shape.x ?? 0}" y="${shape.y ?? 0}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"/></xdr:spPr></xdr:pic>`;
   }
 
   static generateUniqueId(): string {
@@ -53,7 +92,7 @@ export class ExpDrawing {
     const uniqueId = ExpDrawing.generateUniqueId();
     const extLst = `<a:extLst><a:ext uri="{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}"><a16:creationId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" id="${uniqueId}"/></a:ext></a:extLst>`;
 
-    let anchor = `<xdr:twoCellAnchor><xdr:from><xdr:col>${fromCol}</xdr:col><xdr:colOff>${fromColOff}</xdr:colOff><xdr:row>${fromRow}</xdr:row><xdr:rowOff>${fromRowOff}</xdr:rowOff></xdr:from><xdr:to><xdr:col>${toCol}</xdr:col><xdr:colOff>${toColOff}</xdr:colOff><xdr:row>${toRow}</xdr:row><xdr:rowOff>${toRowOff}</xdr:rowOff></xdr:to>`;
+    let anchor = `<xdr:from><xdr:col>${fromCol}</xdr:col><xdr:colOff>${fromColOff}</xdr:colOff><xdr:row>${fromRow}</xdr:row><xdr:rowOff>${fromRowOff}</xdr:rowOff></xdr:from><xdr:to><xdr:col>${toCol}</xdr:col><xdr:colOff>${toColOff}</xdr:colOff><xdr:row>${toRow}</xdr:row><xdr:rowOff>${toRowOff}</xdr:rowOff></xdr:to>`;
 
     const lnStyle =
       lineWidth && lineWidth !== 12700 ? `<a:ln w="${lineWidth}"/>` : "";
@@ -73,7 +112,7 @@ export class ExpDrawing {
       anchor += "</xdr:sp>";
     }
 
-    anchor += "<xdr:clientData/></xdr:twoCellAnchor>";
+    anchor += "<xdr:clientData/>";
 
     return anchor;
   }

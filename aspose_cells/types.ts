@@ -223,6 +223,10 @@ export interface ShapeInfo {
   height?: number;
   cx?: number;
   cy?: number;
+  xfrmX?: number;
+  xfrmY?: number;
+  picCx?: number;
+  picCy?: number;
 }
 
 export type StraightConnectorShapeType = "straightConnector1" | "straightConnector2" | "straightConnector3" | "straightConnector";
@@ -387,7 +391,22 @@ export interface ChartInfo extends ShapeInfo {
   fromColOff?: number;
   toRowOff?: number;
   toColOff?: number;
+  originalX?: number;
+  originalY?: number;
   sheetIndex: number;
 }
 
 export type AllShapeInfo = AllConnectorShapeInfo | BasicShapeInfoType | ChartInfo;
+
+export interface ImageInfo {
+  name: string;
+  data: Buffer;
+  width: number;
+  height: number;
+  ext: string;
+}
+
+export interface PictureShapeInfo extends ShapeInfo {
+  type: "picture";
+  imageIndex: number;
+}

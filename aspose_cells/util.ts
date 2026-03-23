@@ -115,17 +115,14 @@ export function generateUuid(): string {
   });
 }
 
-let zipInstance: ReturnType<typeof AdmZip> | null = null;
-
 export function createZipWriter() {
-  zipInstance = new AdmZip();
+  const zipInstance = new (AdmZip as any)();
   return {
     add: (path: string, content: string) => {
-      zipInstance!.addFile(path, Buffer.from(content, "utf8"));
+      zipInstance.addFile(path, Buffer.from(content, "utf8"));
     },
     close: () => {
-      const buffer = zipInstance!.toBuffer();
-      zipInstance = null;
+      const buffer = zipInstance.toBuffer();
       return Promise.resolve(buffer);
     },
   };

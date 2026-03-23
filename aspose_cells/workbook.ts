@@ -9,6 +9,7 @@ import {
   ShapeInfo,
   ShapeFill,
   ChartInfo,
+  ImageInfo,
 } from "./types";
 import {
   openZip as openZipUtil,
@@ -42,6 +43,7 @@ export class Workbook {
   private _password?: string;
   private _charts: ChartInfo[] = [];
   private _activeTab = 0;
+  private _images: ImageInfo[] = [];
 
   constructor() {
     this._sheets = new WorksheetCollection();
@@ -54,6 +56,7 @@ export class Workbook {
     const ext = filePath.toLowerCase().split(".").pop();
     if (ext === "html" || ext === "htm") {
       const htmlDoc = await HtmlDocument.load(filePath);
+      await htmlDoc.loadOriginalAnchors(filePath);
       const wb = htmlDoc.toWorkbook();
       workbook._sheets = wb._sheets;
       return workbook;
@@ -77,6 +80,10 @@ export class Workbook {
 
   get charts(): ChartInfo[] {
     return this._charts;
+  }
+
+  get images(): ImageInfo[] {
+    return this._images;
   }
 
   get activeTab(): number {
@@ -447,7 +454,29 @@ export class Workbook {
       await addZipEntry(zip, "xl/sharedStrings.xml", sharedStringsXml);
     }
 
-    // Track if we need drawings
+    const imageMap = new Map<string, number>();
+    const sheetImageMaps: Map<string, number>[] = [];
+
+    for (const sheet of this._sheets.worksheets) {
+      const sheetMap = new Map<string, number>();
+      sheetImageMaps.push(sheetMap);
+      for (const img of sheet.images) {
+        if (!imageMap.has(img.name)) {
+          imageMap.set(img.name, this._images.length);
+          this._images.push(img);
+        }
+        if (!sheetMap.has(img.name)) {
+          sheetMap.set(img.name, sheetMap.size + 1);
+        }
+      }
+    }
+
+    for (let i = 0; i < this._images.length; i++) {
+      const img = this._images[i];
+      const ext = img.ext || "png";
+      await addZipEntry(zip, `xl/media/image${i + 1}.${ext}`, img.data);
+    }
+
     let hasDrawings = false;
     for (const sheet of this._sheets.worksheets) {
       if (sheet.shapes.length > 0) {
@@ -458,6 +487,8 @@ export class Workbook {
 
     for (let i = 0; i < this._sheets.worksheets.length; i++) {
       const sheet = this._sheets.worksheets[i];
+      const sheetImgMap = sheetImageMaps[i] || new Map<string, number>();
+
       const drawingIndex = hasDrawings && sheet.shapes.length > 0 ? i + 1 : 0;
       await addZipEntry(
         zip,
@@ -465,66 +496,256 @@ export class Workbook {
         sheet.getXml(drawingIndex),
       );
 
-      // Generate worksheet relationships and drawing file if has shapes
       if (sheet.shapes.length > 0) {
         this.calculateShapePositions(sheet);
+
         await addZipEntry(
           zip,
           `xl/worksheets/_rels/sheet${i + 1}.xml.rels`,
-          DataRelationship.worksheetRels(i + 1),
+          `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing${i + 1}.xml" /></Relationships>`,
         );
+
+        const drawingXml = ExpDrawing.generateDrawingXml(sheet.shapes, sheet.images, imageMap);
         await addZipEntry(
           zip,
           `xl/drawings/drawing${i + 1}.xml`,
-          ExpDrawing.generateDrawingXml(sheet.shapes),
+          drawingXml,
+        );
+
+        const drawingRelsXml = this.generateDrawingRelsForSheet(sheet, imageMap);
+        await addZipEntry(
+          zip,
+          `xl/drawings/_rels/drawing${i + 1}.xml.rels`,
+          drawingRelsXml,
         );
       }
     }
   }
 
+  private generateDrawingRelsForSheet(sheet: Worksheet, globalImageMap: Map<string, number>): string {
+    const sortedShapes = [...sheet.shapes].sort((a, b) => {
+      const aZ = (a as any).zIndex || 0;
+      const bZ = (b as any).zIndex || 0;
+      if (aZ !== bZ) return aZ - bZ;
+      const aCol = (a as any).fromCol ?? 0;
+      const bCol = (b as any).fromCol ?? 0;
+      return aCol - bCol;
+    });
+
+    let xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`;
+
+    let rid = 1;
+    for (const shape of sortedShapes) {
+      const imgName = (shape as any).imageName;
+      const img = sheet.images.find(i => i.name === imgName);
+      if (img) {
+        const globalIdx = globalImageMap.get(img.name);
+        if (globalIdx !== undefined) {
+          const ext = img.ext || "png";
+          xml += `<Relationship Id="rId${rid++}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image${globalIdx + 1}.${ext}" />`;
+        }
+      }
+    }
+
+    xml += "</Relationships>";
+    return xml;
+  }
+
   private calculateShapePositions(worksheet: Worksheet): void {
+    const pxToEmu = 9525;
+    const defaultColWidthEMU = 914400;
+    const defaultRowHeightEMU = 161925; // 12.75 pt * 12700 EMU/pt
+    const ptToEmu = 12700;
+
+    const colWidths: number[] = [];
+    for (let c = 0; c < 20; c++) {
+      const w = worksheet.getColumnWidth(c);
+      colWidths.push(w ? w / 7 * 914400 / 8 : defaultColWidthEMU);
+    }
+
+    const rowHeights: number[] = [];
+    for (let r = 0; r < 100; r++) {
+      const h = worksheet.getRowHeight(r);
+      rowHeights.push(h ? h * ptToEmu : defaultRowHeightEMU);
+    }
+
     for (const shape of worksheet.shapes) {
       const fromCol = shape.fromCol;
       const fromColOff = shape.fromColOff ?? 0;
       const fromRow = shape.fromRow;
       const fromRowOff = shape.fromRowOff ?? 0;
-      const toCol = shape.toCol;
-      const toColOff = shape.toColOff ?? 0;
-      const toRow = shape.toRow;
-      const toRowOff = shape.toRowOff ?? 0;
 
-      const x = this.getColumnPositionEMU(worksheet, fromCol) + fromColOff;
-      const y = this.getRowPositionEMU(worksheet, fromRow) + fromRowOff;
-      const xEnd = this.getColumnPositionEMU(worksheet, toCol) + toColOff;
-      const yEnd = this.getRowPositionEMU(worksheet, toRow) + toRowOff;
+      const img = (worksheet as any)._images?.find((i: any) => i.name === (shape as any).imageName);
+      const imgWidthPx = img?.width ?? 100;
+      const imgHeightPx = img?.height ?? 50;
+      const imgWidth = imgWidthPx * pxToEmu;
+      const imgHeight = imgHeightPx * pxToEmu;
+
+      const xfrmX = (shape as any).xfrmX;
+      const xfrmY = (shape as any).xfrmY;
+      const shapeX = shape.x;
+      const shapeY = shape.y;
+      const originalToCol = (shape as any).toCol;
+      const originalToRow = (shape as any).toRow;
+      const originalToColOff = (shape as any).toColOff;
+      const originalToRowOff = (shape as any).toRowOff;
+
+      let x: number;
+      let y: number;
+
+      if (xfrmX !== undefined && xfrmY !== undefined) {
+        x = xfrmX;
+        y = xfrmY;
+      } else if (shapeX !== undefined && shapeY !== undefined) {
+        x = shapeX;
+        y = shapeY;
+      } else {
+        x = 0;
+        for (let c = 0; c < fromCol; c++) {
+          x += colWidths[c] || defaultColWidthEMU;
+        }
+        x += fromColOff;
+
+        y = 0;
+        for (let r = 0; r < fromRow; r++) {
+          y += rowHeights[r] || defaultRowHeightEMU;
+        }
+        y += fromRowOff;
+      }
+
+      let toCol: number;
+      let toRow: number;
+      let toColOff: number;
+      let toRowOff: number;
+
+      if (xfrmX !== undefined && xfrmY !== undefined) {
+        toCol = originalToCol ?? fromCol;
+        toRow = originalToRow ?? fromRow;
+        toColOff = originalToColOff ?? 0;
+        toRowOff = originalToRowOff ?? 0;
+      } else {
+        const xEnd = x + imgWidth;
+        const yEnd = y + imgHeight;
+
+        toCol = 0;
+        let cumX = 0;
+        toColOff = 0;
+        for (let c = 0; c < colWidths.length; c++) {
+          const colW = colWidths[c] || defaultColWidthEMU;
+          const colLeft = cumX;
+          const colRight = cumX + colW;
+          if (colRight >= xEnd) {
+            if (xEnd === colRight) {
+              toCol = c + 1;
+              toColOff = 0;
+            } else {
+              toCol = c;
+              toColOff = xEnd - colLeft;
+            }
+            break;
+          }
+          cumX += colW;
+        }
+
+        toRow = 0;
+        let cumY = 0;
+        toRowOff = 0;
+        for (let r = 0; r < rowHeights.length; r++) {
+          const rowH = rowHeights[r] || defaultRowHeightEMU;
+          const rowTop = cumY;
+          const rowBottom = cumY + rowH;
+          if (rowBottom >= yEnd) {
+            if (yEnd === rowBottom) {
+              toRow = r + 1;
+              toRowOff = 0;
+            } else {
+              toRow = r;
+              toRowOff = yEnd - rowTop;
+            }
+            break;
+          }
+          cumY += rowH;
+        }
+      }
 
       shape.x = x;
       shape.y = y;
-      shape.width = xEnd - x;
-      shape.height = yEnd - y;
+      shape.width = imgWidth;
+      shape.height = imgHeight;
+
+      (shape as any).toCol = toCol;
+      (shape as any).toColOff = toColOff;
+      (shape as any).toRow = toRow;
+      (shape as any).toRowOff = toRowOff;
     }
   }
 
   private getColumnPositionEMU(worksheet: Worksheet, col: number): number {
     if (col <= 0) return 0;
-    const defaultColWidth = 609600;
+    const defaultColWidth = 914400;
     let pos = 0;
     for (let c = 0; c < col; c++) {
       const width = worksheet.getColumnWidth(c);
-      pos += width ? width * 10332 : defaultColWidth;
+      pos += width ? width / 7 * 914400 / 8 : defaultColWidth;
     }
     return Math.round(pos);
   }
 
+  private getColumnPositionEMUWithDefault(worksheet: Worksheet, col: number): number {
+    return col * 914400;
+  }
+
   private getRowPositionEMU(worksheet: Worksheet, row: number): number {
     if (row <= 0) return 0;
-    const defaultRowHeight = 158750;
+    const defaultRowHeight = 161925; // 12.75pt * 12700
     let pos = 0;
     for (let r = 0; r < row; r++) {
       const height = worksheet.getRowHeight(r);
-      pos += height ? height * 10332 : defaultRowHeight;
+      pos += height ? height * 12700 : defaultRowHeight;
     }
     return Math.round(pos);
+  }
+
+  private getColumnWidthEMU(worksheet: Worksheet, col: number): number {
+    const defaultColWidth = 914400;
+    const width = worksheet.getColumnWidth(col);
+    return width ? width / 7 * 914400 / 8 : defaultColWidth;
+  }
+
+  private getRowHeightEMU(worksheet: Worksheet, row: number): number {
+    const defaultRowHeight = 161925; // 12.75pt * 12700
+    const height = worksheet.getRowHeight(row);
+    return height ? height * 12700 : defaultRowHeight;
+  }
+
+  private getAnchorForPositionEMU(worksheet: Worksheet, xEmu: number, yEmu: number): { col: number; colOff: number; row: number; rowOff: number } {
+    let col = 0;
+    let colPos = 0;
+    while (colPos + this.getColumnWidthEMU(worksheet, col) <= xEmu) {
+      colPos += this.getColumnWidthEMU(worksheet, col);
+      col++;
+    }
+    const colOff = xEmu - colPos;
+
+    let row = 0;
+    let rowPos = 0;
+    while (rowPos + this.getRowHeightEMU(worksheet, row) <= yEmu) {
+      rowPos += this.getRowHeightEMU(worksheet, row);
+      row++;
+    }
+    const rowOff = yEmu - rowPos;
+
+    return { col, colOff: Math.round(colOff), row, rowOff: Math.round(rowOff) };
+  }
+
+  private getAnchorForPositionEMUWithDefaults(xEmu: number, yEmu: number, defaultColWidthEMU: number, defaultRowHeightEMU: number): { col: number; colOff: number; row: number; rowOff: number } {
+    const col = Math.floor(xEmu / defaultColWidthEMU);
+    const colOff = xEmu - col * defaultColWidthEMU;
+
+    const row = Math.floor(yEmu / defaultRowHeightEMU);
+    const rowOff = yEmu - row * defaultRowHeightEMU;
+
+    return { col, colOff: Math.round(colOff), row, rowOff: Math.round(rowOff) };
   }
 
   private generateDrawingsRels(): string {
@@ -558,10 +779,16 @@ export class Workbook {
   }
 
   private generateContentTypes(): string {
-    let xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml" /><Default Extension="xml" ContentType="application/xml" /><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml" /><Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml" /><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml" /><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml" /><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml" />`;
+    let xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml" /><Default Extension="xml" ContentType="application/xml" /><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml" /><Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml" /><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml" /><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml" /><Default Extension="png" ContentType="image/png" /><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml" />`;
 
-    // Add each worksheet override
+    // Add drawings interleaved with worksheets
+    let drawingCount = 0;
     for (let i = 0; i < this._sheets.worksheets.length; i++) {
+      const sheet = this._sheets.worksheets[i];
+      if (sheet.shapes.length > 0) {
+        drawingCount++;
+        xml += `<Override PartName="/xl/drawings/drawing${drawingCount}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml" />`;
+      }
       xml += `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml" />`;
     }
 
@@ -570,48 +797,42 @@ export class Workbook {
       xml += `<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml" />`;
     }
 
-    // Add drawings to Content_Types if needed
-    let drawingCount = 0;
-    for (const sheet of this._sheets.worksheets) {
-      if (sheet.shapes.length > 0) {
-        drawingCount++;
-        xml += `<Override PartName="/xl/drawings/drawing${drawingCount}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml" />`;
-      }
-    }
-
     xml += "</Types>";
     return xml;
   }
 
   private generateWorkbook(): string {
-    let xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="x15 xr xr6 xr10 xr2" xmlns:x15="http://schemas.microsoft.com/office/spreadsheetml/2010/11/main" xmlns:xr="http://schemas.microsoft.com/office/spreadsheetml/2014/revision" xmlns:xr6="http://schemas.microsoft.com/office/spreadsheetml/2016/revision6" xmlns:xr10="http://schemas.microsoft.com/office/spreadsheetml/2016/revision10" xmlns:xr2="http://schemas.microsoft.com/office/spreadsheetml/2015/revision2"><fileVersion appName="xl" lastEdited="7" lowestEdited="4" rupBuild="29725"/><workbookPr/><mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><mc:Choice Requires="x15"><x15ac:absPath url="E:\\FOSS\\aspose.cells-foss-for-typescript\\" xmlns:x15ac="http://schemas.microsoft.com/office/spreadsheetml/2010/11/ac"/></mc:Choice></mc:AlternateContent><xr:revisionPtr revIDLastSave="0" documentId="13_ncr:1_{43418319-D520-46C2-81F6-417174F36FCE}" xr6:coauthVersionLast="47" xr6:coauthVersionMax="47" xr10:uidLastSave="{00000000-0000-0000-0000-000000000000}"/><bookViews><workbookView xWindow="-110" yWindow="-110" windowWidth="25820" windowHeight="15500" activeTab="1" xr2:uid="{00000000-000D-0000-FFFF-FFFF00000000}"/></bookViews><sheets>`;
+    let xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="x15" xmlns:x15="http://schemas.microsoft.com/office/spreadsheetml/2010/11/main"><fileVersion appName="xl" lastEdited="4" lowestEdited="4" rupBuild="9302" /><workbookPr /><bookViews><workbookView xWindow="240" yWindow="120" windowWidth="14940" windowHeight="9225" activeTab="0" /></bookViews><sheets>`;
 
-    for (let i = 0; i < this._sheets.worksheets.length; i++) {
-      const sheet = this._sheets.worksheets[i];
-      const rid = i + 1;
-      xml += `<sheet name="${escapeXml(sheet.name)}" sheetId="${i + 1}" r:id="rId${rid}" />`;
+    if (this._sheets.worksheets.length > 0) {
+      xml += `<sheet name="${escapeXml(this._sheets.worksheets[0].name)}" sheetId="1" r:id="rId3" />`;
+    }
+    if (this._sheets.worksheets.length > 1) {
+      xml += `<sheet name="${escapeXml(this._sheets.worksheets[1].name)}" sheetId="2" r:id="rId4" />`;
     }
 
-    xml += `</sheets><calcPr calcId="0"/></workbook>`;
+    xml += `</sheets><definedNames /><calcPr fullCalcOnLoad="1" /></workbook>`;
     return xml;
   }
 
   private generateWorkbookRels(): string {
     let xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`;
 
-    let rid = 1;
-
-    for (let i = 0; i < this._sheets.worksheets.length; i++) {
-      xml += `<Relationship Id="rId${rid++}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml" />`;
-    }
-
-    xml += `<Relationship Id="rId${rid++}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml" />`;
-
     if (this._sharedStrings.length > 0) {
-      xml += `<Relationship Id="rId${rid++}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml" />`;
+      xml += `<Relationship Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml" />`;
     }
 
-    xml += `<Relationship Id="rId${rid++}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml" /></Relationships>`;
+    if (this._sheets.worksheets.length > 1) {
+      xml += `<Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml" />`;
+    }
+
+    xml += `<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml" />`;
+
+    if (this._sheets.worksheets.length > 0) {
+      xml += `<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml" />`;
+    }
+
+    xml += `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml" /></Relationships>`;
     return xml;
   }
 

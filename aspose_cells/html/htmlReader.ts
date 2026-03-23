@@ -164,6 +164,48 @@ export class HtmlReader {
     return results.length > 0 ? results[0] : null;
   }
 
+  getFullElement(): string {
+    const tagName = this.tagName;
+    if (!tagName) return "";
+
+    const startPos = this.currentTagStart;
+    if (startPos === -1) return "";
+
+    let depth = 1;
+    let pos = this.currentTagEnd;
+
+    while (pos < this.len && depth > 0) {
+      if (this.html.slice(pos, pos + 4).toLowerCase() === "<!--") {
+        const endComment = this.html.indexOf("-->", pos + 4);
+        if (endComment !== -1) {
+          pos = endComment + 3;
+          continue;
+        }
+      }
+
+      if (this.html[pos] === "<") {
+        if (this.html.slice(pos, pos + 2) === "</") {
+          const closeTagMatch = this.html.slice(pos).match(/^<\/?([a-zA-Z0-9\-]+)[^>]*>/i);
+          if (closeTagMatch && closeTagMatch[1].toLowerCase() === tagName) {
+            depth--;
+            if (depth === 0) {
+              pos = pos + closeTagMatch[0].length;
+              break;
+            }
+          }
+        } else {
+          const openTagMatch = this.html.slice(pos).match(/^<([a-zA-Z0-9\-]+)[^>]*>/i);
+          if (openTagMatch && openTagMatch[1].toLowerCase() === tagName) {
+            depth++;
+          }
+        }
+      }
+      pos++;
+    }
+
+    return this.html.slice(startPos, pos);
+  }
+
   getElementsByTagName(tagName: string): HtmlReader[] {
     const results: HtmlReader[] = [];
     const originalPos = this.pos;
