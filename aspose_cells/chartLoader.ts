@@ -138,6 +138,12 @@ export class ChartLoader {
         const chartContent = await readZipEntryUtil(zip, chartPath);
         if (!chartContent) continue;
 
+        const chartStylePath = chartPath.replace(/chart(\d+)\.xml$/, 'style$1.xml');
+        const chartStyleContent = await readZipEntryUtil(zip, chartStylePath);
+        
+        const chartColorsPath = chartPath.replace(/chart(\d+)\.xml$/, 'colors$1.xml');
+        const chartColorsContent = await readZipEntryUtil(zip, chartColorsPath);
+        
         const chartDoc = parser.parseFromString(chartContent, "text/xml");
 
         const twoCellAnchor = frame.parentNode as Element;
@@ -200,6 +206,9 @@ export class ChartLoader {
           toRowOff,
           originalX,
           originalY,
+          chartContent,
+          chartStyleContent,
+          chartColorsContent,
         );
       }
     }
@@ -223,6 +232,9 @@ export class ChartLoader {
     toRowOff: number,
     originalX: number = 0,
     originalY: number = 0,
+    originalChartXml?: string,
+    originalStyleXml?: string,
+    originalColorsXml?: string,
   ) {
     const chartSpace = chartDoc.getElementsByTagName("c:chartSpace")[0];
     if (!chartSpace) return;
@@ -460,6 +472,9 @@ export class ChartLoader {
       originalX,
       originalY,
       sheetIndex,
+      originalChartXml: originalChartXml,
+      originalStyleXml: originalStyleXml || undefined,
+      originalColorsXml: originalColorsXml || undefined,
     });
   }
 }

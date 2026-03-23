@@ -394,6 +394,9 @@ export interface ChartInfo extends ShapeInfo {
   originalX?: number;
   originalY?: number;
   sheetIndex: number;
+  originalChartXml?: string;
+  originalStyleXml?: string;
+  originalColorsXml?: string;
 }
 
 export type AllShapeInfo = AllConnectorShapeInfo | BasicShapeInfoType | ChartInfo;

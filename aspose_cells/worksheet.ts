@@ -37,6 +37,7 @@ export class Worksheet {
   private _images: ImageInfo[] = [];
   private _defaultColumnWidth?: number;
   private _defaultRowHeight?: number;
+  _drawingIndex: number = 0;
 
   constructor(name: string, index: number) {
     this._name = name;

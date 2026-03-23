@@ -104,6 +104,7 @@ export class ImpDrawing {
       let xfrmY: number | undefined;
       let picCx: number | undefined;
       let picCy: number | undefined;
+      let imageEmbedId: string | undefined;
 
       if (pic) {
         const spPr = pic.getElementsByTagName("xdr:spPr")[0];
@@ -122,6 +123,14 @@ export class ImpDrawing {
             }
           }
         }
+        
+        const blipFill = pic.getElementsByTagName("xdr:blipFill")[0];
+        if (blipFill) {
+          const blip = blipFill.getElementsByTagName("a:blip")[0];
+          if (blip) {
+            imageEmbedId = blip.getAttribute("r:embed") || undefined;
+          }
+        }
       }
 
       if (sp || cxnSp) {
@@ -130,6 +139,11 @@ export class ImpDrawing {
         if (spPr) {
           const xfrm = spPr.getElementsByTagName("a:xfrm")[0];
           if (xfrm) {
+            const off = xfrm.getElementsByTagName("a:off")[0];
+            if (off) {
+              xfrmX = parseInt(off.getAttribute("x") || "0", 10);
+              xfrmY = parseInt(off.getAttribute("y") || "0", 10);
+            }
             const flipVAttr = xfrm.getAttribute("flipV");
             flipV = flipVAttr === "1";
             const flipHAttr = xfrm.getAttribute("flipH");
@@ -221,6 +235,35 @@ export class ImpDrawing {
 
       const nameEl = anchor.getElementsByTagName("xdr:cNvPr")[0];
       const name = nameEl?.getAttribute("name") || `Shape ${i + 1}`;
+
+      if (pic && imageEmbedId) {
+        shapes.push({
+          name,
+          type: "picture",
+          fromCol,
+          fromColOff,
+          fromRow,
+          fromRowOff,
+          toCol,
+          toColOff,
+          toRow,
+          toRowOff,
+          fill,
+          cx,
+          cy,
+          lineColor,
+          lineWidth,
+          flipV,
+          flipH,
+          rotation,
+          xfrmX,
+          xfrmY,
+          picCx,
+          picCy,
+          imageEmbedId,
+        } as any);
+        continue;
+      }
 
       const baseShape = {
         name,

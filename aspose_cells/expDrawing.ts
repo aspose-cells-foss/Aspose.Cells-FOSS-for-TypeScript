@@ -1,4 +1,4 @@
-import { ShapeInfo, ShapeFill, AllConnectorShapeInfo, ImageInfo } from "./types";
+import { ShapeInfo, ShapeFill, AllConnectorShapeInfo, ImageInfo, ChartInfo } from "./types";
 import { escapeXml } from "./util";
 
 export class ExpDrawing {
@@ -14,11 +14,18 @@ export class ExpDrawing {
       return aCol - bCol;
     });
 
+    let rid = 1;
+    let chartIndex = 1;
     for (let i = 0; i < sortedShapes.length; i++) {
       const shape = sortedShapes[i];
-      if ((shape as any).type === "picture") {
-        xml += `<xdr:twoCellAnchor editAs="oneCell">`;
-        xml += ExpDrawing.pictureToDrawingXml(shape as any, i);
+      
+      if ((shape as any).type === "chart" || (shape as any).chartType) {
+        xml += `<xdr:twoCellAnchor>`;
+        xml += ExpDrawing.chartToDrawingXml(shape as any, rid++, chartIndex++);
+        xml += `<xdr:clientData/></xdr:twoCellAnchor>`;
+      } else if ((shape as any).type === "picture") {
+        xml += `<xdr:twoCellAnchor>`;
+        xml += ExpDrawing.pictureToDrawingXml(shape as any, rid++);
         xml += `<xdr:clientData/></xdr:twoCellAnchor>`;
       } else {
         xml += `<xdr:twoCellAnchor>`;
@@ -29,6 +36,27 @@ export class ExpDrawing {
 
     xml += "</xdr:wsDr>";
     return xml;
+  }
+
+  private static chartToDrawingXml(shape: any, rid: number, chartIndex: number): string {
+    const fromCol = shape.fromCol ?? 0;
+    const fromColOff = shape.fromColOff ?? 0;
+    const fromRow = shape.fromRow ?? 0;
+    const fromRowOff = shape.fromRowOff ?? 0;
+    const toCol = shape.toCol ?? 0;
+    const toColOff = shape.toColOff ?? 0;
+    const toRow = shape.toRow ?? 0;
+    const toRowOff = shape.toRowOff ?? 0;
+
+    const x = shape.originalX ?? shape.x ?? 0;
+    const y = shape.originalY ?? shape.y ?? 0;
+    const cx = shape.width ?? 0;
+    const cy = shape.height ?? 0;
+
+    const uniqueId = ExpDrawing.generateUniqueId();
+    const extLst = `<a:extLst><a:ext uri="{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}"><a16:creationId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" id="${uniqueId}"/></a:ext></a:extLst>`;
+
+    return `<xdr:from><xdr:col>${fromCol}</xdr:col><xdr:colOff>${fromColOff}</xdr:colOff><xdr:row>${fromRow}</xdr:row><xdr:rowOff>${fromRowOff}</xdr:rowOff></xdr:from><xdr:to><xdr:col>${toCol}</xdr:col><xdr:colOff>${toColOff}</xdr:colOff><xdr:row>${toRow}</xdr:row><xdr:rowOff>${toRowOff}</xdr:rowOff></xdr:to><xdr:graphicFrame macro=""><xdr:nvGraphicFramePr><xdr:cNvPr id="${rid + 2}" name="${escapeXml(shape.name || "Chart")}">${extLst}</xdr:cNvPr><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr><xdr:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></xdr:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="rId${rid}"/></a:graphicData></a:graphic></xdr:graphicFrame>`;
   }
 
   private static pictureToDrawingXml(shape: any, sortedIdx: number): string {

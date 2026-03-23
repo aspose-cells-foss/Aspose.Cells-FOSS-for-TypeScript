@@ -5,8 +5,10 @@ export class WorksheetCollection {
   private _worksheets: Worksheet[] = [];
   private _styles: Map<number, Style> = new Map();
 
-  constructor() {
-   //  this._worksheets.push(new Worksheet("Sheet1", 0));
+  constructor(createDefault: boolean = true) {
+    if (createDefault) {
+      this._worksheets.push(new Worksheet("Sheet1", 0));
+    }
   }
 
   [Symbol.iterator](): Iterator<Worksheet> {
@@ -37,6 +39,10 @@ export class WorksheetCollection {
 
   get(index: number): Worksheet | undefined {
     return this._worksheets[index];
+  }
+
+  getByName(name: string): Worksheet | undefined {
+    return this._worksheets.find(w => w.name === name);
   }
 
   map<T>(callback: (value: Worksheet, index: number) => T): T[] {
