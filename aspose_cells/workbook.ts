@@ -536,12 +536,16 @@ export class Workbook {
           const chart = shape as ChartInfo;
           const chartXml = chart.originalChartXml || this.generateChartXml(chart);
           await addZipEntry(zip, `xl/charts/chart${chartIndex}.xml`, chartXml);
-          const chartRelsXml = this.generateChartRels(chartIndex);
-          await addZipEntry(zip, `xl/charts/_rels/chart${chartIndex}.xml.rels`, chartRelsXml);
-          const chartStyleXml = chart.originalStyleXml || this.generateChartStyle(chartIndex);
-          await addZipEntry(zip, `xl/charts/style${chartIndex}.xml`, chartStyleXml);
-          const chartColorsXml = chart.originalColorsXml || this.generateChartColors(chartIndex);
-          await addZipEntry(zip, `xl/charts/colors${chartIndex}.xml`, chartColorsXml);
+          if (chart.originalChartXml) {
+            const chartRelsXml = this.generateChartRels(chartIndex);
+            await addZipEntry(zip, `xl/charts/_rels/chart${chartIndex}.xml.rels`, chartRelsXml);
+            if (chart.originalStyleXml) {
+              await addZipEntry(zip, `xl/charts/style${chartIndex}.xml`, chart.originalStyleXml);
+            }
+            if (chart.originalColorsXml) {
+              await addZipEntry(zip, `xl/charts/colors${chartIndex}.xml`, chart.originalColorsXml);
+            }
+          }
           chartIndex++;
         }
       }
@@ -562,13 +566,21 @@ export class Workbook {
   
   private generateChartXml(chart: ChartInfo): string {
     const chartType = chart.chartType || chart.type || "column";
-    let chartTypeXml = "";
-    let axId1 = "481499312";
-    let axId2 = "481499792";
+    const axId1 = "55530882";
+    const axId2 = "30015890";
+    const sheetName = this._sheets.worksheets[chart.sheetIndex]?.name || "Sheet1";
+    const legendPos = chart.legendPosition === "left" ? "l" : 
+                      chart.legendPosition === "right" ? "r" : 
+                      chart.legendPosition === "top" ? "t" : "b";
 
-    const seriesXml = this.generateChartSeries(chart, chartType);
-    const dLblsXml = '<c:dLbls><c:showLegendKey val="0"/><c:showVal val="0"/><c:showCatName val="0"/><c:showSerName val="0"/><c:showPercent val="0"/><c:showBubbleSize val="0"/></c:dLbls>';
-    
+    let seriesXml = "";
+    for (let i = 0; i < chart.series.length; i++) {
+      const ser = chart.series[i];
+      const valCol = String.fromCharCode(66 + i);
+      seriesXml += `<c:ser><c:idx val="${i}" /><c:order val="${i}" /><c:tx><c:strRef><c:f>${sheetName}!$${valCol}$1</c:f></c:strRef></c:tx><c:invertIfNegative val="0" /><c:cat><c:strRef><c:f>${sheetName}!$A$2:$A$6</c:f><c:strCache><c:ptCount val="5" /></c:strCache></c:strRef></c:cat><c:val><c:numRef><c:f>${sheetName}!$${valCol}$2:$${valCol}$6</c:f><c:numCache><c:ptCount val="5" /></c:numCache></c:numRef></c:val></c:ser>`;
+    }
+
+    let chartTypeXml = "";
     switch (chartType) {
       case "bar":
       case "column":
@@ -577,43 +589,36 @@ export class Workbook {
       case "barStacked100":
       case "columnStacked100":
         const barDir = chartType === "bar" || chartType === "barStacked" || chartType === "barStacked100" ? "bar" : "col";
-        const grouping = chartType === "barStacked" || chartType === "columnStacked" ? "stacked" :
-                         chartType === "barStacked100" || chartType === "columnStacked100" ? "percentStacked" : "clustered";
-        chartTypeXml = `<c:barChart><c:barDir val="${barDir}"/><c:grouping val="${grouping}"/><c:varyColors val="0"/>${seriesXml}${dLblsXml}<c:gapWidth val="219"/><c:overlap val="-27"/><c:axId val="${axId1}"/><c:axId val="${axId2}"/></c:barChart>`;
+        chartTypeXml = `<c:barChart><c:barDir val="${barDir}" /><c:grouping val="clustered" /><c:varyColors val="0" />${seriesXml}<c:axId val="${axId1}" /><c:axId val="${axId2}" /></c:barChart>`;
         break;
       case "line":
       case "lineStacked":
       case "lineStacked100":
-        const lineGrouping = chartType === "lineStacked" ? "stacked" : chartType === "lineStacked100" ? "percentStacked" : "clustered";
-        chartTypeXml = `<c:lineChart><c:grouping val="${lineGrouping}"/><c:varyColors val="0"/>${seriesXml}${dLblsXml}<c:axId val="${axId1}"/><c:axId val="${axId2}"/></c:lineChart>`;
+        chartTypeXml = `<c:lineChart><c:grouping val="clustered" />${seriesXml}<c:axId val="${axId1}" /><c:axId val="${axId2}" /></c:lineChart>`;
         break;
       case "pie":
       case "doughnut":
-        chartTypeXml = `<c:pieChart><c:varyColors val="0"/>${seriesXml}${dLblsXml}</c:pieChart>`;
+        chartTypeXml = `<c:pieChart><c:varyColors val="0" />${seriesXml}</c:pieChart>`;
         break;
       case "area":
       case "areaStacked":
       case "areaStacked100":
-        const areaGrouping = chartType === "areaStacked" ? "stacked" : chartType === "areaStacked100" ? "percentStacked" : "clustered";
-        chartTypeXml = `<c:areaChart><c:grouping val="${areaGrouping}"/>${seriesXml}${dLblsXml}<c:axId val="${axId1}"/><c:axId val="${axId2}"/></c:areaChart>`;
+        chartTypeXml = `<c:areaChart><c:grouping val="clustered" />${seriesXml}<c:axId val="${axId1}" /><c:axId val="${axId2}" /></c:areaChart>`;
         break;
       case "scatter":
-        chartTypeXml = `<c:scatterChart><c:scatterStyle val="lineMarker"/>${seriesXml}<c:axId val="${axId1}"/><c:axId val="${axId2}"/></c:scatterChart>`;
+        chartTypeXml = `<c:scatterChart><c:scatterStyle val="lineMarker" />${seriesXml}<c:axId val="${axId1}" /><c:axId val="${axId2}" /></c:scatterChart>`;
         break;
       case "radar":
-        chartTypeXml = `<c:radarChart><c:radarStyle val="marker"/>${seriesXml}</c:radarChart>`;
+        chartTypeXml = `<c:radarChart><c:radarStyle val="marker" />${seriesXml}</c:radarChart>`;
         break;
       default:
-        chartTypeXml = `<c:barChart><c:barDir val="col"/><c:grouping val="clustered"/><c:varyColors val="0"/>${seriesXml}${dLblsXml}<c:gapWidth val="219"/><c:overlap val="-27"/><c:axId val="${axId1}"/><c:axId val="${axId2}"/></c:barChart>`;
+        chartTypeXml = `<c:barChart><c:barDir val="col" /><c:grouping val="clustered" /><c:varyColors val="0" />${seriesXml}<c:axId val="${axId1}" /><c:axId val="${axId2}" /></c:barChart>`;
     }
 
-    const titleXml = this.generateChartTitle(chart.title || '');
-    const titleDelXml = '<c:autoTitleDeleted val="0"/>';
-    const legendXml = this.generateChartLegendFull(chart.legendPosition || "right");
-    const catAxXml = this.generateCategoryAxisFull(axId1, axId2, chart.categoryAxisPosition || "bottom");
-    const valAxXml = this.generateValueAxisFull(axId2, axId1, chart.valueAxisPosition || "left");
+    const title = chart.title || "";
+    const titleXml = title ? `<c:title><c:tx><c:rich><a:bodyPr wrap="square" /><a:lstStyle /><a:p><a:pPr><a:defRPr /></a:pPr><a:r><a:rPr lang="en-US" /><a:t>${escapeXml(title)}</a:t></a:r></a:p></c:rich></c:tx><c:layout /><c:overlay val="0" /><c:spPr><a:noFill /><a:ln><a:noFill /></a:ln></c:spPr></c:title>` : "";
 
-    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:c16r2="http://schemas.microsoft.com/office/drawing/2015/06/chart"><c:date1904 val="0"/><c:lang val="en-GB"/><c:roundedCorners val="0"/><mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><mc:Choice Requires="c14" xmlns:c14="http://schemas.microsoft.com/office/drawing/2007/8/2/chart"><c14:style val="102"/></mc:Choice><mc:Fallback><c:style val="2"/></mc:Fallback></mc:AlternateContent><c:chart>${titleXml}${titleDelXml}<c:plotArea><c:layout/>${chartTypeXml}${catAxXml}${valAxXml}<c:spPr><a:noFill/><a:ln><a:noFill/></a:ln><a:effectLst/></c:spPr></c:plotArea>${legendXml}<c:plotVisOnly val="1"/><c:dispBlanksAs val="gap"/><c:showDLblsOverMax val="0"/><c:extLst><c:ext uri="{56B9EC1D-385E-4148-901F-78D8002777C0}" xmlns:c16r3="http://schemas.microsoft.com/office/drawing/2017/03/chart"><c16r3:dataDisplayOptions16><c16r3:dispNaAsBlank val="1"/></c16r3:dataDisplayOptions16></c:ext></c:extLst></c:chart><c:spPr><a:solidFill><a:schemeClr val="bg1"/></a:solidFill><a:ln w="9525" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="15000"/><a:lumOff val="85000"/></a:schemeClr></a:solidFill><a:round/></a:ln><a:effectLst/></c:spPr><c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr/></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr><c:printSettings><c:headerFooter/><c:pageMargins b="0.75" l="0.7" r="0.7" t="0.75" header="0.3" footer="0.3"/><c:pageSetup/></c:printSettings></c:chartSpace>`;
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><c:roundedCorners val="0" /><c:chart>${titleXml}<c:autoTitleDeleted val="0" /><c:plotArea><c:layout />${chartTypeXml}<c:catAx><c:axId val="${axId1}" /><c:scaling><c:orientation val="minMax" /></c:scaling><c:delete val="0" /><c:axPos val="b" /><c:numFmt formatCode="General" sourceLinked="1" /><c:majorTickMark val="out" /><c:minorTickMark val="none" /><c:tickLblPos val="nextTo" /><c:crossAx val="${axId2}" /><c:crosses val="autoZero" /><c:lblOffset val="100" /><c:noMultiLvlLbl val="0" /></c:catAx><c:valAx><c:axId val="${axId2}" /><c:scaling><c:orientation val="minMax" /></c:scaling><c:delete val="0" /><c:axPos val="l" /><c:majorGridlines><c:spPr><a:ln /></c:spPr></c:majorGridlines><c:numFmt formatCode="General" sourceLinked="1" /><c:majorTickMark val="out" /><c:minorTickMark val="none" /><c:tickLblPos val="nextTo" /><c:crossAx val="${axId1}" /><c:crosses val="autoZero" /><c:crossBetween val="between" /></c:valAx><c:spPr><a:solidFill><a:srgbClr val="C0C0C0" /></a:solidFill><a:ln w="12700"><a:solidFill><a:srgbClr val="808080" /></a:solidFill></a:ln></c:spPr></c:plotArea><c:legend><c:legendPos val="${legendPos}" /><c:layout /><c:overlay val="0" /></c:legend><c:plotVisOnly val="1" /><c:dispBlanksAs val="gap" /><c:showDLblsOverMax val="0" /></c:chart></c:chartSpace>`;
   }
 
   private generateChartTitle(title: string): string {
@@ -639,14 +644,14 @@ export class Workbook {
     const sheetName = this._sheets.worksheets[chart.sheetIndex]?.name || "Sheet1";
     const accentColors = ["accent1", "accent2", "accent3", "accent4", "accent5", "accent6"];
     
-    const catRange = chart.series[0]?.categories ? 
-      `${sheetName}!$A$9:$D$9` : "";
     const catValues = chart.series[0]?.categories || [];
     const catCount = catValues.length;
     let catCacheXml = "";
     if (catCount > 0) {
       catCacheXml = catValues.map((c, j) => `<c:pt idx="${j}"><c:v>${escapeXml(String(c))}</c:v></c:pt>`).join("");
     }
+    
+    const colLetter = (idx: number) => String.fromCharCode(65 + idx);
     
     for (let i = 0; i < chart.series.length; i++) {
       const ser = chart.series[i];
@@ -655,17 +660,16 @@ export class Workbook {
       const color = accentColors[i % accentColors.length];
       
       let catXml = "";
-      if (catRange && catCount > 0) {
-        catXml = `<c:cat><c:strRef><c:f>${catRange}</c:f><c:strCache><c:ptCount val="${catCount}"/>${catCacheXml}</c:strCache></c:strRef></c:cat>`;
+      if (catCount > 0) {
+        catXml = `<c:cat><c:strRef><c:f>${sheetName}!$A$2:$A${1 + catCount}</c:f><c:strCache><c:ptCount val="${catCount}"/>${catCacheXml}</c:strCache></c:strRef></c:cat>`;
       }
       
       let valXml = "";
       if (ser.values && ser.values.length > 0) {
-        const valRow = 10 + i;
-        const valRange = `${sheetName}!$A$${valRow}:$D$${valRow}`;
         const valValues = ser.values;
+        const valCol = colLetter(1 + i);
         const valCacheXml = valValues.map((v, j) => `<c:pt idx="${j}"><c:v>${v}</c:v></c:pt>`).join("");
-        valXml = `<c:val><c:numRef><c:f>${valRange}</c:f><c:numCache><c:formatCode>0%</c:formatCode><c:ptCount val="${valValues.length}"/>${valCacheXml}</c:numCache></c:numRef></c:val>`;
+        valXml = `<c:val><c:numRef><c:f>${sheetName}!$${valCol}$2:$${valCol}${1 + valValues.length}</c:f><c:numCache><c:formatCode>General</c:formatCode><c:ptCount val="${valValues.length}"/>${valCacheXml}</c:numCache></c:numRef></c:val>`;
       }
       
       const extLstXml = `<c:extLst><c:ext uri="{C3380CC4-5D6E-409C-BE32-E72D297353CC}" xmlns:c16="http://schemas.microsoft.com/office/drawing/2014/chart"><c16:uniqueId val="{${String(i).padStart(8, '0')}-384C-4FB8-8CC3-16A0F5B4F08F}"/></c:ext></c:extLst>`;
@@ -981,8 +985,6 @@ export class Workbook {
 
     for (let i = 1; i <= chartCount; i++) {
       xml += `<Override PartName="/xl/charts/chart${i}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml" />`;
-      xml += `<Override PartName="/xl/charts/style${i}.xml" ContentType="application/vnd.ms-office.chartstyle+xml" />`;
-      xml += `<Override PartName="/xl/charts/colors${i}.xml" ContentType="application/vnd.ms-office.chartcolorstyle+xml" />`;
     }
 
     // Add shared strings part if needed

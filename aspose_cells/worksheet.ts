@@ -1,4 +1,5 @@
 import { Cells, Cell } from "./cell";
+import { ChartCollection } from "./chartCollection";
 import type {
   CellValue,
   Style,
@@ -35,6 +36,7 @@ export class Worksheet {
   private _hiddenRows: Set<number> = new Set<number>();
   private _shapes: ShapeInfo[] = [];
   private _images: ImageInfo[] = [];
+  private _charts: ChartCollection;
   private _defaultColumnWidth?: number;
   private _defaultRowHeight?: number;
   _drawingIndex: number = 0;
@@ -42,6 +44,7 @@ export class Worksheet {
   constructor(name: string, index: number) {
     this._name = name;
     this._index = index;
+    this._charts = new ChartCollection(index, this);
   }
 
   get name(): string {
@@ -212,8 +215,8 @@ export class Worksheet {
     return this._shapes;
   }
 
-  get charts(): ChartInfo[] {
-    return this._shapes.filter((s): s is ChartInfo => "chartType" in s);
+  get charts(): ChartCollection {
+    return this._charts;
   }
 
   addImage(image: ImageInfo) {
