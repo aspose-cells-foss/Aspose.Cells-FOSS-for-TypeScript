@@ -1,7 +1,23 @@
 {
-  "name": "excel-cells",
+  "name": "@aspose/cells",
   "version": "1.0.0",
+  "description": "Open-source TypeScript library for creating, reading, modifying, and converting Excel files",
   "main": "index.ts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aspose-cells-foss/Aspose.Cells-FOSS-for-TypeScript.git"
+  },
+  "author": "Aspose Pty Ltd",
+  "license": "MIT",
+  "keywords": [
+    "aspose",
+    "cells",
+    "excel",
+    "xlsx",
+    "spreadsheet",
+    "typescript",
+    "foss"
+  ],
   "scripts": {
     "start": "tsx index.ts"
   },
