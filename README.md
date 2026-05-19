@@ -1,7 +1,7 @@
 # Aspose.Cells FOSS for TypeScript
 
 Open-source TypeScript library for creating, reading, modifying, and converting
-Excel files programmatically — without requiring Microsoft Excel.
+Excel files programmatically -- without requiring Microsoft Excel.
 
 ## Features
 
@@ -31,12 +31,12 @@ npm install
 ## Quick Start
 
 ```typescript
-import { Workbook } from './aspose_cells';
+import { Workbook } from "./aspose_cells";
 
 const workbook = new Workbook();
 const sheet = workbook.worksheets.get(0)!;
-sheet.putValue('A1', 'Hello, Aspose.Cells!');
-workbook.save('output.xlsx');
+sheet.putValue("A1", "Hello, Aspose.Cells!");
+workbook.save("output.xlsx");
 ```
 
 ## Documentation
@@ -45,4 +45,4 @@ workbook.save('output.xlsx');
 
 ## License
 
-MIT — see [LICENSE](LICENSE) file.
+MIT -- see [LICENSE](LICENSE) file.
