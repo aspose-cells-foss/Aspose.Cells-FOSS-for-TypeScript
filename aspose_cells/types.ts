@@ -180,6 +180,7 @@ export enum SaveFormat {
   JSON = "json",
   MARKDOWN = "markdown",
   HTML = "html",
+  PDF = "pdf",
 }
 
 export enum EncryptionType {
@@ -412,4 +413,22 @@ export interface ImageInfo {
 export interface PictureShapeInfo extends ShapeInfo {
   type: "picture";
   imageIndex: number;
+}
+
+export interface PictureInfo {
+  name: string;
+  src: string;
+  fromRow: number;
+  fromCol: number;
+  fromRowOff?: number;
+  fromColOff?: number;
+  toRow?: number;
+  toCol?: number;
+  toRowOff?: number;
+  toColOff?: number;
+  width?: number;
+  height?: number;
+  x?: number;
+  y?: number;
+  zIndex?: number;
 }

@@ -206,9 +206,9 @@ export class ChartLoader {
           toRowOff,
           originalX,
           originalY,
-          chartContent,
-          chartStyleContent,
-          chartColorsContent,
+          chartContent ?? undefined,
+          chartStyleContent ?? undefined,
+          chartColorsContent ?? undefined,
         );
       }
     }

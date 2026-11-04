@@ -89,7 +89,7 @@ export class HtmlDocument {
     try {
       const AdmZip = require("adm-zip");
       const zip = new AdmZip(xlsxPath);
-      const drawingEntries = zip.getEntries().filter(e => e.entryName.includes("drawing") && e.entryName.endsWith(".xml") && !e.entryName.includes("_rels"));
+      const drawingEntries = zip.getEntries().filter((e: any) => e.entryName.includes("drawing") && e.entryName.endsWith(".xml") && !e.entryName.includes("_rels"));
       
       for (const entry of drawingEntries) {
         const drawingXml = entry.getData().toString("utf8");

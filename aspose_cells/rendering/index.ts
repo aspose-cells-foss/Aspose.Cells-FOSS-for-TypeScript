@@ -1,0 +1,35 @@
+export { RenderUnits } from "./RenderUnits";
+export { PaperSizes } from "./PaperSizes";
+export { RenderColor } from "./RenderColor";
+export { RenderContext } from "./RenderContext";
+export { SheetLayout } from "./SheetLayout";
+export { PageLayout } from "./PageLayout";
+export { Paginator } from "./Paginator";
+export { WorkbookPdfExporter } from "./WorkbookPdfExporter";
+export { SheetPdfRenderer } from "./SheetPdfRenderer";
+export { SheetCellRenderer } from "./SheetCellRenderer";
+export { ShapeRenderer } from "./ShapeRenderer";
+export { PrintAreaRanges } from "./PrintAreaRanges";
+export { WorksheetDataExtractor } from "./WorksheetDataExtractor";
+export { PdfTextDocumentSession } from "./PdfTextDocumentSession";
+export type { ColorValue } from "./ColorValue";
+export { RgbaColor } from "./ColorValue";
+export type { PageSetupData, PdfSaveOptions } from "./types";
+export { PageOrientation } from "./types";
+export { MergeRegion, PageMargins } from "./types";
+
+// 新增：Shape & Geometry 相关
+export { Point, Rect, PdfPath } from "./ShapeTypes";
+export { ParsedShape, SmartArtShape, ShapeXmlParser } from "./ShapeData";
+export { ShapeCurveGeometry } from "./ShapeCurveGeometry";
+export { ShapePolylineGeometry } from "./ShapePolylineGeometry";
+export { ShapeCustomGeometry } from "./ShapeCustomGeometry";
+export { ShapeSpecialGeometry } from "./ShapeSpecialGeometry";
+export { ShapeExtendedGeometry } from "./ShapeExtendedGeometry";
+export { ShapePresetDetails } from "./ShapePresetDetails";
+export { ShapePatternRenderer } from "./ShapePatternRenderer";
+export { ShapeReflectionRenderer } from "./ShapeReflectionRenderer";
+export { ShapeVerticalTextRenderer } from "./ShapeVerticalTextRenderer";
+export { ShapeWrappedTextRenderer } from "./ShapeWrappedTextRenderer";
+export { GroupShapeRenderer } from "./GroupShapeRenderer";
+export { ConditionalFillRunRenderer } from "./ConditionalFillRunRenderer";

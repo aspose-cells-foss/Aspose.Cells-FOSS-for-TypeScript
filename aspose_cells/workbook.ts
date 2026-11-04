@@ -22,7 +22,7 @@ import {
   finalizeZip,
   fixZipFile,
 } from "./util";
-import { writeFile, mkdir } from "fs/promises";
+import { writeFile, mkdir, open } from "fs/promises";
 import { existsSync } from "fs";
 import { dirname, join } from "path";
 import {
@@ -393,6 +393,14 @@ export class Workbook {
   ) {
     const format = options?.saveFormat || this.detectFormat(filePath);
 
+    await Workbook.assertOutputWritable(filePath);
+
+    if (format === SaveFormat.PDF) {
+      const { WorkbookPdfExporter } = await import("./rendering");
+      await WorkbookPdfExporter.export(this, filePath);
+      return;
+    }
+
     if (format === SaveFormat.HTML) {
       const dir = dirname(filePath);
       const fileName =
@@ -423,11 +431,31 @@ export class Workbook {
 
   private detectFormat(filePath: string): SaveFormat {
     const ext = filePath.toLowerCase().split(".").pop();
+    if (ext === "pdf") return SaveFormat.PDF;
     if (ext === "html" || ext === "htm") return SaveFormat.HTML;
     if (ext === "csv") return SaveFormat.CSV;
     if (ext === "json") return SaveFormat.JSON;
     if (ext === "md" || ext === "markdown") return SaveFormat.MARKDOWN;
     return SaveFormat.XLSX;
+  }
+
+  /**
+   * 目标文件被其它程序（Excel / WPS / PDF 阅读器）打开时，Windows 上写入会失败甚至长时间阻塞。
+   * 这里提前检测并以明确错误快速失败，避免 save() 看起来像“卡死”。
+   */
+  private static async assertOutputWritable(filePath: string): Promise<void> {
+    try {
+      if (!existsSync(filePath)) return;
+      const handle = await open(filePath, "r+");
+      await handle.close();
+    } catch (err: any) {
+      if (err?.code === "EBUSY" || err?.code === "EPERM") {
+        throw new Error(
+          `无法写入 "${filePath}"：文件正被其它程序占用，请关闭 Excel / WPS / PDF 阅读器后重试`,
+        );
+      }
+      // 其它错误（如只读目录）交给实际写入逻辑报错
+    }
   }
 
   toHtml(): string {

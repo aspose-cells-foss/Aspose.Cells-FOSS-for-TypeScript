@@ -182,7 +182,7 @@ export function fixZipFile(data: Uint8Array): Uint8Array {
   return new Uint8Array(buffer);
 }
 
-export async function addZipEntry(zip: any, path: string, content: string) {
+export async function addZipEntry(zip: any, path: string, content: string | Buffer | Uint8Array) {
   await zip.add(path, content);
 }
 
