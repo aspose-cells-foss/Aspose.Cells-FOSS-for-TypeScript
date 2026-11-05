@@ -1,4 +1,5 @@
 import type { Worksheet } from "../index";
+import type { ImageInfo, ShapeInfo } from "../types";
 
 /**
  * Data extracted from a TypeScript Worksheet for the rendering pipeline.
@@ -11,6 +12,30 @@ export interface ExtractedCell {
   styleIndex: number;
 }
 
+export interface MergeRegionInfo {
+  firstRow: number;
+  firstColumn: number;
+  totalRows: number;
+  totalColumns: number;
+}
+
+/** Anchored picture usable by the rendering pipeline. */
+export interface ExtractedPicture {
+  /** Buffer decoded from the worksheet media (PNG/JPEG/etc.). */
+  data: Buffer;
+  /** Image extension for pdfkit ("png", "jpg", ...). */
+  ext: string;
+  /** EMU offsets for the twoCellAnchor (914400 EMU/in, /12700 = pt). */
+  fromRow: number;
+  fromRowOff: number;
+  fromCol: number;
+  fromColOff: number;
+  toRow: number;
+  toRowOff: number;
+  toCol: number;
+  toColOff: number;
+}
+
 export interface ExtractedWorksheetData {
   name: string;
   index: number;
@@ -20,17 +45,14 @@ export interface ExtractedWorksheetData {
   lastColumn: number;
   cells: Map<string, ExtractedCell>; // key = "row,col"
   merges: MergeRegionInfo[];
-  columnWidths: Map<number, number>; // colIndex -> width in points-like units
-  rowHeights: Map<number, number>;   // rowIndex -> height
+  pictures: ExtractedPicture[];
+  shapes: ShapeInfo[];
+  columnWidths: Map<number, number>; // colIndex -> width in Excel chars
+  rowHeights: Map<number, number>;   // rowIndex -> height in points
+  defaultColumnWidthChars?: number;  // from sheetFormatPr@defaultColWidth, Excel chars
+  defaultRowHeightPt?: number;       // from sheetFormatPr@defaultRowHeight, in points
   hiddenRows: Set<number>;
   hiddenColumns: Set<number>;
-}
-
-export interface MergeRegionInfo {
-  firstRow: number;
-  firstColumn: number;
-  totalRows: number;
-  totalColumns: number;
 }
 
 /** Extracts worksheet data into a flat structure consumable by rendering. */
@@ -56,7 +78,7 @@ export class WorksheetDataExtractor {
 
       if (row < minRow) minRow = row;
       if (row > maxRow) maxRow = row;
-      if (col < minCol) minCol = minCol;
+      if (col < minCol) minCol = col;
       if (col > maxCol) maxCol = col;
     }
 
@@ -90,6 +112,43 @@ export class WorksheetDataExtractor {
       if (lastC > maxCol) maxCol = lastC;
     }
 
+    const shapes = (worksheet as any).shapes as ShapeInfo[] | undefined;
+    const pictures: ExtractedPicture[] = [];
+    const imagesByName = new Map<string, ImageInfo>();
+    for (const img of worksheet.images as ImageInfo[]) imagesByName.set(img.name, img);
+    if (Array.isArray(shapes)) {
+      for (const shape of shapes) {
+        if ((shape as any)?.type !== "picture") continue;
+        const imgName = (shape as any).imageName ?? (shape as any).imageEmbedId;
+        const img: ImageInfo | undefined = imgName ? imagesByName.get(imgName) : undefined;
+        if (!img?.data || img.data.length === 0) continue;
+        pictures.push({
+          data: img.data,
+          ext: (img.ext || "png").toLowerCase() === "jpg" ? "jpeg" : (img.ext || "png").toLowerCase(),
+          fromRow: shape.fromRow ?? 0,
+          fromRowOff: shape.fromRowOff ?? 0,
+          fromCol: shape.fromCol ?? 0,
+          fromColOff: shape.fromColOff ?? 0,
+          toRow: shape.toRow ?? shape.fromRow ?? 0,
+          toRowOff: shape.toRowOff ?? 0,
+          toCol: shape.toCol ?? shape.fromCol ?? 0,
+          toColOff: shape.toColOff ?? 0,
+        });
+      }
+    }
+
+    // Also expand picture anchors into the used range so PageLayouts include them
+    for (const p of pictures) {
+      const minR = Math.min(p.fromRow, p.toRow);
+      const maxR = Math.max(p.fromRow, p.toRow);
+      const minC = Math.min(p.fromCol, p.toCol);
+      const maxC = Math.max(p.fromCol, p.toCol);
+      if (minR < minRow) minRow = minR;
+      if (maxR > maxRow) maxRow = maxR;
+      if (minC < minCol) minCol = minC;
+      if (maxC > maxCol) maxCol = maxC;
+    }
+
     return {
       name: worksheet.name,
       index: worksheet.index,
@@ -99,8 +158,12 @@ export class WorksheetDataExtractor {
       lastColumn: maxCol,
       cells,
       merges,
+      pictures,
+      shapes: Array.isArray(shapes) ? shapes.slice() : [],
       columnWidths: (worksheet as any)._columnWidths ?? new Map(),
       rowHeights: (worksheet as any)._rowHeights ?? new Map(),
+      defaultColumnWidthChars: worksheet.defaultColumnWidth,
+      defaultRowHeightPt: worksheet.defaultRowHeight,
       hiddenRows: (worksheet as any)._hiddenRows ?? new Set(),
       hiddenColumns: new Set<number>(),
     };

@@ -387,8 +387,9 @@ export class HtmlDocument {
     mainTable.toWorksheet(worksheet, {});
 
     const pxToEmu = 9525;
-    const pxPerCol = 64;
-    const pxPerRow = 16;
+    // Defaults; we try to override below with actual column/row widths from the worksheet.
+    let pxPerCol = 64;
+    let pxPerRow = 16;
     let shapeIdx = 0;
 
     const defaultRowHeight = 12.75 * 12700;
@@ -396,6 +397,16 @@ export class HtmlDocument {
 
     for (const pic of mainTable.pictures) {
       const { row, col, name, src, width, height, marginLeft, marginTop, zIndex } = pic;
+
+      // Per-picture per-cell: the picture's fromCol/fromRow host cell can differ from the
+      // hard-coded 64/16 defaults, so resolve pxPerCol/pxPerRow from the worksheet when
+      // the table has explicit column widths or row heights.
+      // worksheet.getColumnWidth returns Excel char width → × 7.5 to px;
+      // worksheet.getRowHeight returns pt → × 96/72 to px.
+      const cellColWChars = worksheet.getColumnWidth(col);
+      const cellRowHPt = worksheet.getRowHeight(row);
+      const cellPxPerCol = cellColWChars !== undefined ? cellColWChars * 7.5 : pxPerCol;
+      const cellPxPerRow = cellRowHPt !== undefined ? cellRowHPt * 96 / 72 : pxPerRow;
 
       const imgFileName = src.split("/").pop() || src;
       const sheetDir = sheetFilePath ? dirname(sheetFilePath) : htmlDir;
@@ -425,15 +436,15 @@ export class HtmlDocument {
 
       const fromCol = col;
       const fromRow = row;
-      const fromColOff = (marginLeft % pxPerCol) * pxToEmu;
-      const fromRowOff = (marginTop % pxPerRow) * pxToEmu;
+      const fromColOff = (marginLeft % cellPxPerCol) * pxToEmu;
+      const fromRowOff = (marginTop % cellPxPerRow) * pxToEmu;
 
       const endX = marginLeft + width;
       const endY = marginTop + height;
-      const toCol = fromCol + Math.floor(endX / pxPerCol);
-      const toRow = fromRow + Math.floor(endY / pxPerRow);
-      const toColOff = (endX % pxPerCol) * pxToEmu;
-      const toRowOff = (endY % pxPerRow) * pxToEmu;
+      const toCol = fromCol + Math.floor(endX / cellPxPerCol);
+      const toRow = fromRow + Math.floor(endY / cellPxPerRow);
+      const toColOff = (endX % cellPxPerCol) * pxToEmu;
+      const toRowOff = (endY % cellPxPerRow) * pxToEmu;
 
       const originalAnchor = originalAnchors?.get(name);
 

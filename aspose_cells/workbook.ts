@@ -312,6 +312,22 @@ export class Workbook {
     const parser = new DOMParser();
     const doc = parser.parseFromString(content, "text/xml");
 
+    // sheetFormatPr: default column/row widths for columns/rows that don't specify their own.
+    // Mirrors .NET XlsxWorkbookWorksheetLoader.LoadSheetFormatPr → WorksheetModel.DefaultColumnWidth.
+    const sheetFormatPr = doc.getElementsByTagName("sheetFormatPr")[0];
+    if (sheetFormatPr) {
+      const defaultColWidth = sheetFormatPr.getAttribute("defaultColWidth");
+      if (defaultColWidth !== null) {
+        const w = parseFloat(defaultColWidth);
+        if (w > 0) worksheet.defaultColumnWidth = w;
+      }
+      const defaultRowHeight = sheetFormatPr.getAttribute("defaultRowHeight");
+      if (defaultRowHeight !== null) {
+        const h = parseFloat(defaultRowHeight);
+        if (h > 0) worksheet.defaultRowHeight = h;
+      }
+    }
+
     const cols = doc.getElementsByTagName("cols")[0];
     if (cols) {
       const colElements = cols.getElementsByTagName("col");
@@ -319,12 +335,18 @@ export class Workbook {
         const col = colElements[i];
         const min = parseInt(col.getAttribute("min") ?? "1", 10) - 1;
         const max = parseInt(col.getAttribute("max") ?? "1", 10);
-        const width = parseFloat(col.getAttribute("width") ?? "8.43");
-
-        const htmlWidth = Math.round(width * 7);
-
-        for (let c = min; c < max; c++) {
-          worksheet.setColumnWidth(c, htmlWidth);
+        const widthAttr = col.getAttribute("width");
+        // Only persist when the <col> element actually has a width attribute.
+        // Columns without an explicit width fall back to the sheet-level
+        // defaultColWidth / Excel 8.43 default in SheetLayout (matching .NET:
+        // range.Width.HasValue && range.Width.Value > 0 gate in SheetLayout.ComputeColumns).
+        if (widthAttr !== null) {
+          const widthChars = parseFloat(widthAttr);
+          if (widthChars > 0) {
+            for (let c = min; c < max; c++) {
+              worksheet.setColumnWidth(c, widthChars);
+            }
+          }
         }
       }
     }

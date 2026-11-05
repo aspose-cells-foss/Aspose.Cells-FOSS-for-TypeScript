@@ -11,6 +11,8 @@ export class SheetLayout {
 
   private static readonly DefaultColumnWidthChars = 8.43;
   private static readonly DefaultRowHeightPt = 15;
+  /** Default column width as Excel chars (the .NET-side DefaultColumnWidthChars). */
+  private static readonly DefaultColumnWidthCharsValue = 8.43;
 
   sheet!: ExtractedWorksheetData;
   firstRow = 0;
@@ -66,6 +68,19 @@ export class SheetLayout {
       if (lastC > maxCol) maxCol = lastC;
     }
 
+    // Anchored pictures live outside the cell grid — expand the used range to include
+    // their twoCellAnchor rectangles so Paginator lays out enough columns/rows for them.
+    for (const p of data.pictures) {
+      const minR = Math.min(p.fromRow, p.toRow);
+      const maxR = Math.max(p.fromRow, p.toRow);
+      const minC = Math.min(p.fromCol, p.toCol);
+      const maxC = Math.max(p.fromCol, p.toCol);
+      if (minR < minRow) minRow = minR;
+      if (maxR > maxRow) maxRow = maxR;
+      if (minC < minCol) minCol = minC;
+      if (maxC > maxCol) maxCol = maxC;
+    }
+
     if (maxRow < 0 || maxCol < 0) {
       this.firstRow = 0; this.firstColumn = 0;
       this.lastRow = -1; this.lastColumn = -1;
@@ -104,20 +119,22 @@ export class SheetLayout {
     this.columnWidthPt = new Array(count);
     this.columnHidden = new Array(count).fill(false);
 
-    // Default column width
-    const defaultPt = RenderUnits.defaultColumnWidthCharsToPoints(
-      SheetLayout.DefaultColumnWidthChars, 7.5
-    );
+    // worksheet._columnWidths are Excel character widths (both OOXML and HTML loaders store them
+    // that way now). Convert each to pt via the ECMA-376 formula, matching .NET RenderUnits.
+    // Sheet-level defaultColWidth takes priority over the fabricated 8.43 fallback.
+    // See .NET SheetLayout.cs lines 194-198.
+    const defaultPt = data.defaultColumnWidthChars !== undefined && data.defaultColumnWidthChars > 0
+      ? RenderUnits.columnWidthCharsToPoints(data.defaultColumnWidthChars, 7.5)
+      : RenderUnits.defaultColumnWidthCharsToPoints(SheetLayout.DefaultColumnWidthChars, 7.5);
 
     for (let c = 0; c < count; c++) {
       this.columnWidthPt[c] = defaultPt;
     }
 
-    // Apply explicit column widths
-    for (const [colIdx, width] of data.columnWidths) {
+    for (const [colIdx, widthChars] of data.columnWidths) {
       const c = Math.max(0, Math.min(colIdx, this.lastColumn));
       if (c < 0 || c >= count) continue;
-      this.columnWidthPt[c] = RenderUnits.columnWidthCharsToPoints(width, 7.5);
+      this.columnWidthPt[c] = RenderUnits.columnWidthCharsToPoints(widthChars, 7.5);
     }
   }
 

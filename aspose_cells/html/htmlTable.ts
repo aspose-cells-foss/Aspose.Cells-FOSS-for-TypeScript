@@ -486,6 +486,9 @@ export class HtmlTable {
             colWidth = Math.round(colWidth * 4 / 3); // pt to px at 96dpi
           }
         }
+        // Convert HTML pixel width back to Excel character width (approx: 1 Excel char ≈ 7.5 px).
+        // This keeps worksheet._columnWidths in Excel chars, matching .NET WorksheetModel.Width.
+        colWidth = colWidth / 7.5;
         const spanCount = span ? parseInt(span, 10) : 1;
         for (let i = 0; i < spanCount; i++) {
           table._colWidths.push(colWidth);
