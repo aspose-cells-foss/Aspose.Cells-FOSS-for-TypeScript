@@ -38,9 +38,5 @@ export interface PageSetupData {
   pageOrderOverThenDown?: boolean;
 }
 
-export class PdfSaveOptions {
-  onePagePerSheet = false;
-  allColumnsInOnePagePerSheet = false;
-  defaultFont?: string;
-  conditionalFormattingEvaluationDate?: Date;
-}
+// PdfSaveOptions is now defined in ../types (the canonical location), which also
+// carries the SaveOptions base class and HtmlSaveOptions. Re-exported from index.ts.

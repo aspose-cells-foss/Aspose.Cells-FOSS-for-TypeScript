@@ -119,8 +119,18 @@ export class WorksheetDataExtractor {
     if (Array.isArray(shapes)) {
       for (const shape of shapes) {
         if ((shape as any)?.type !== "picture") continue;
-        const imgName = (shape as any).imageName ?? (shape as any).imageEmbedId;
-        const img: ImageInfo | undefined = imgName ? imagesByName.get(imgName) : undefined;
+
+        // Resolve the image from worksheet.images. Two mutually consistent paths:
+        //  - imageIndex (htmlDocument path — explicit index into worksheet.images)
+        //  - imageName / imageEmbedId (OOXML drawing XML path — matched by name)
+        let img: ImageInfo | undefined;
+        const idx = (shape as any).imageIndex;
+        if (typeof idx === "number" && (worksheet.images as ImageInfo[])[idx]) {
+          img = (worksheet.images as ImageInfo[])[idx];
+        } else {
+          const imgName = (shape as any).imageName ?? (shape as any).imageEmbedId;
+          img = imgName ? imagesByName.get(imgName) : undefined;
+        }
         if (!img?.data || img.data.length === 0) continue;
         pictures.push({
           data: img.data,

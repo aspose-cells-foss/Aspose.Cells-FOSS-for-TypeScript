@@ -8,6 +8,7 @@ import { dirname, join } from "path";
 import type { CellValue } from "../types";
 import type { ImageInfo } from "../types";
 import { DOMParser } from "@xmldom/xmldom";
+import { RenderUnits } from "../rendering/RenderUnits";
 
 export interface HtmlParseOptions {
   trimWhitespace?: boolean;
@@ -387,13 +388,17 @@ export class HtmlDocument {
     mainTable.toWorksheet(worksheet, {});
 
     const pxToEmu = 9525;
-    // Defaults; we try to override below with actual column/row widths from the worksheet.
-    let pxPerCol = 64;
-    let pxPerRow = 16;
+    // Default cell dimensions used when the worksheet has no explicit column/row widths.
+    // Express defaults in Excel chars (column) and points (row), then convert via the
+    // same ECMA-376 formulas used by the rendering pipeline (chars → pt → EMU).
+    const defaultColWidthChars = 8.43;
+    const defaultRowHeightPt = 12.75;
+    const defaultRowHeightEMU = defaultRowHeightPt * 12700;
+    const defaultColWidthEMU =
+      RenderUnits.defaultColumnWidthCharsToPoints(defaultColWidthChars, 7.5) * 12700;
+    let pxPerCol = defaultColWidthChars * 7.5;  // fallback px per cell for offset calc
+    let pxPerRow = defaultRowHeightPt * 96 / 72;
     let shapeIdx = 0;
-
-    const defaultRowHeight = 12.75 * 12700;
-    const defaultColWidth = 8 * 914400 / 8;
 
     for (const pic of mainTable.pictures) {
       const { row, col, name, src, width, height, marginLeft, marginTop, zIndex } = pic;
@@ -408,30 +413,53 @@ export class HtmlDocument {
       const cellPxPerCol = cellColWChars !== undefined ? cellColWChars * 7.5 : pxPerCol;
       const cellPxPerRow = cellRowHPt !== undefined ? cellRowHPt * 96 / 72 : pxPerRow;
 
-      const imgFileName = src.split("/").pop() || src;
-      const sheetDir = sheetFilePath ? dirname(sheetFilePath) : htmlDir;
-      let imgPath = join(sheetDir, imgFileName).replace(/\\/g, "/");
-
       let imageData: Buffer | null = null;
       let ext = "png";
-      try {
-        imageData = readFileSync(imgPath);
-        ext = imgFileName.split(".").pop() || "png";
-      } catch {
+
+      // 1) base64 data URI: "data:image/png;base64,iVBORw0KGgo..."
+      const dataUriMatch = src.match(/^data:image\/([a-zA-Z0-9+.-]+);base64,(.*)$/i);
+      if (dataUriMatch) {
+        ext = dataUriMatch[1].toLowerCase() === "jpeg" ? "jpg" : dataUriMatch[1].toLowerCase();
         try {
-          const imgPath2 = join(htmlDir, imgFileName);
-          imageData = readFileSync(imgPath2);
-          ext = imgFileName.split(".").pop() || "png";
+          imageData = Buffer.from(dataUriMatch[2], "base64");
         } catch {
-          continue;
+          imageData = null;
         }
       }
 
-      let imageIdx = imageMap.get(imgFileName) ?? -1;
+      // 2) local file path (relative or absolute) — try sheet dir first, then html dir.
+      //    For non-file src (e.g. http://), simply skip since local file lookup can't help.
+      if (!imageData && src && !/^https?:\/\//i.test(src)) {
+        const imgFileName = src.split("/").pop() || src;
+        const sheetDir = sheetFilePath ? dirname(sheetFilePath) : htmlDir;
+        const candidates = [
+          join(sheetDir, imgFileName),
+          join(htmlDir, imgFileName),
+          src,
+        ];
+        for (const candidate of candidates) {
+          try {
+            imageData = readFileSync(candidate);
+            ext = imgFileName.split(".").pop() || "png";
+            break;
+          } catch { /* try next */ }
+        }
+      }
+
+      if (!imageData || imageData.length === 0) continue;
+
+      // For base64 URIs we need a synthetic dedup key so imageMap still folds identical
+      // inline images and originalAnchor matching isn't broken.
+      const imgFileName = src.split("/").pop() || src;
+      const dedupKey = dataUriMatch
+        ? `inline-base64-${Buffer.from(dataUriMatch![2]).slice(0, 16).toString("hex")}`
+        : imgFileName;
+
+      let imageIdx = imageMap.get(dedupKey) ?? -1;
       if (imageIdx === -1) {
         imageIdx = images.length;
-        imageMap.set(imgFileName, imageIdx);
-        images.push({ name: imgFileName, data: imageData as Buffer, width, height, ext });
+        imageMap.set(dedupKey, imageIdx);
+        images.push({ name: dedupKey, data: imageData as Buffer, width, height, ext });
       }
 
       const fromCol = col;
@@ -479,13 +507,19 @@ export class HtmlDocument {
         yPos = marginTop * pxToEmu;
 
         for (let c = 0; c < fromCol; c++) {
-          const w = worksheet.getColumnWidth(c);
-          xPos += w ? (w / 7 * 914400 / 8) : defaultColWidth;
+          const wChars = worksheet.getColumnWidth(c);
+          // Same chars→pt→EMU chain as SheetLayout.computeColumns:
+          //   chars → pt via ECMA-376 formula, then pt × 12700 → EMU
+          xPos += wChars !== undefined
+            ? RenderUnits.columnWidthCharsToPoints(wChars, 7.5) * 12700
+            : defaultColWidthEMU;
         }
 
         for (let r = 0; r < fromRow; r++) {
-          const h = worksheet.getRowHeight(r);
-          yPos += h ? (h * 12700) : defaultRowHeight;
+          const hPt = worksheet.getRowHeight(r);
+          yPos += hPt !== undefined
+            ? hPt * 12700
+            : defaultRowHeightEMU;
         }
 
         finalFromCol = fromCol;

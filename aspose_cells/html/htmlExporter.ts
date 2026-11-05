@@ -2,6 +2,7 @@ import { Workbook } from "../workbook";
 import { Worksheet } from "../worksheet";
 import { join } from "path";
 import type { ShapeInfo, ChartInfo, AllConnectorShapeInfo } from "../types";
+import { HtmlSaveOptions } from "../types";
 import { ChartRenderer } from "./chartRenderer";
 
 const EMU_PER_PIXEL = 914400 / 96;
@@ -9,17 +10,21 @@ const EMU_PER_PIXEL = 914400 / 96;
 export class HtmlExporter {
   private workbook: Workbook;
   private chartRenderer: ChartRenderer;
+  private options: HtmlSaveOptions;
 
-  constructor(workbook: Workbook) {
+  constructor(workbook: Workbook, options?: HtmlSaveOptions) {
     this.workbook = workbook;
     this.chartRenderer = new ChartRenderer();
+    this.options = options ?? new HtmlSaveOptions();
   }
 
   async saveAsHtmlFrameset(
     filePath: string,
     htmlDir: string,
     fileName: string,
+    options?: HtmlSaveOptions,
   ) {
+    if (options) this.options = options;
     const { writeFile, mkdir } = await import("fs/promises");
     const { existsSync } = await import("fs");
 
@@ -597,15 +602,24 @@ ${tableHtml}
       ...shapes.map((s) => s.toCol),
     );
 
-    const defaultWidth = 64;
+    // worksheet.getColumnWidth returns Excel chars; worksheet.getRowHeight returns pt.
+    // Convert both to CSS pixels (96 DPI) so every downstream consumer in this file
+    // (table layout, shape bounding boxes, SVG width/height) sees the same unit.
+    const defaultWidthChars = 8.43;
+    const defaultHeightPt = 12.75;
+    const charsToPx = (chars: number) => chars * 7.5;
+    const ptToPx = (pt: number) => pt * 96 / 72;
+
     const columnWidths: number[] = [];
     for (let col = 0; col <= maxCol; col++) {
-      columnWidths.push(worksheet.getColumnWidth(col) || defaultWidth);
+      const wChars = worksheet.getColumnWidth(col);
+      columnWidths.push(charsToPx(wChars ?? defaultWidthChars));
     }
 
     const rowHeights: number[] = [];
     for (let row = 0; row <= maxRow; row++) {
-      rowHeights.push(worksheet.getRowHeight(row) || 16);
+      const hPt = worksheet.getRowHeight(row);
+      rowHeights.push(ptToPx(hPt ?? defaultHeightPt));
     }
 
     let totalWidth = 0;
@@ -635,8 +649,11 @@ ${tableHtml}
     });
 
     for (let row = 0; row <= maxRow; row++) {
-      const rowHeight = worksheet.getRowHeight(row) || 16;
-      tableHtml += ` <tr height='${rowHeight}' style='mso-height-source:userset;height:${rowHeight * 0.75}pt'>`;
+      // worksheet.getRowHeight returns pt (OOXML native); HTML height attr needs px,
+      // and the explicit style needs pt. Use both in their correct unit.
+      const rowHeightPt = worksheet.getRowHeight(row) ?? defaultHeightPt;
+      const rowHeightPx = ptToPx(rowHeightPt);
+      tableHtml += ` <tr height='${rowHeightPx}' style='mso-height-source:userset;height:${rowHeightPt}pt'>`;
 
       for (let col = 0; col <= maxCol; col++) {
         const cell = worksheet.getCell(row, col);
@@ -654,11 +671,11 @@ ${tableHtml}
         }
 
         if (col === 0) {
-          cellAttr += ` height='${rowHeight}'`;
+          cellAttr += ` height='${rowHeightPx}'`;
           if (row === 0) {
-            cellAttr += ` width='${colWidth}' style='height:${rowHeight * 0.75}pt;width:${colWidth * 0.75}pt;'`;
+            cellAttr += ` width='${colWidth}' style='height:${rowHeightPt}pt;width:${colWidth * 0.75}pt;'`;
           } else {
-            cellAttr += ` style='height:${rowHeight * 0.75}pt;'`;
+            cellAttr += ` style='height:${rowHeightPt}pt;'`;
           }
         } else if (row === 0) {
           cellAttr += ` width='${colWidth}' style='width:${colWidth * 0.75}pt;'`;
@@ -713,6 +730,10 @@ ${tableHtml}
   ): string {
     if ("chartType" in shape) {
       return this.chartRenderer.renderChart(shape as ChartInfo, worksheet);
+    }
+
+    if ((shape as any).type === "picture") {
+      return this.pictureToHtmlImg(shape, columnWidths, rowHeights, worksheet, shapeIndex);
     }
 
     let classCounter = 0;
@@ -981,6 +1002,79 @@ stroke-linejoin:miter;
     return `<span style='mso-ignore:vglayout;position:absolute;z-index:${shapeIndex + 1};margin-left:${left}px;margin-top:${top}px;width:${width}px;height:${height}px'>${svgContent}</span>`;
   }
 
+  /**
+   * Renders a picture shape as a true SVG block that contains an <image> element
+   * pointing at the base64-encoded PNG/JPEG data. The SVG is then wrapped in the same
+   * mso-ignore:vglayout span that all other shapes use so Excel-style HTML renders it
+   * at the correct EMU-derived position.
+   */
+  private pictureToHtmlImg(
+    shape: ShapeInfo,
+    columnWidths: number[],
+    rowHeights: number[],
+    worksheet: Worksheet,
+    shapeIndex: number,
+  ): string {
+    let imgData: Buffer | null = null;
+    let imgExt = "png";
+    const idx = (shape as any).imageIndex;
+    const imagesArr = (worksheet.images as any[]) ?? [];
+    if (typeof idx === "number" && imagesArr[idx]) {
+      const raw = imagesArr[idx];
+      imgData = raw.data;
+      imgExt = raw.ext ?? "png";
+    } else {
+      const name = (shape as any).imageName ?? (shape as any).imageEmbedId;
+      const found = imagesArr.find((i) => i && i.name === name);
+      if (found) { imgData = found.data; imgExt = found.ext ?? "png"; }
+    }
+
+    if (!imgData || imgData.length === 0) return "";
+
+    const colOffs = (shape.fromColOff ?? 0) / EMU_PER_PIXEL;
+    const rowOffs = (shape.fromRowOff ?? 0) / EMU_PER_PIXEL;
+    const colOffe = (shape.toColOff ?? 0) / EMU_PER_PIXEL;
+    const rowOffe = (shape.toRowOff ?? 0) / EMU_PER_PIXEL;
+
+    let widthPx = 0;
+    for (let col = shape.fromCol; col < shape.toCol; col++) widthPx += (columnWidths[col] ?? 64);
+    widthPx += colOffe - colOffs;
+
+    let heightPx = 0;
+    for (let row = shape.fromRow; row < shape.toRow; row++) heightPx += (rowHeights[row] ?? 16);
+    heightPx += rowOffe - rowOffs;
+
+    const mime = (imgExt === "jpg" || imgExt === "jpeg") ? "image/jpeg" : `image/${imgExt}`;
+    const b64 = imgData.toString("base64");
+    const dataUri = `data:${mime};base64,${b64}`;
+
+    const rotation = shape.rotation ?? 0;
+    const flipH = !!shape.flipH;
+    const flipV = !!shape.flipV;
+    const hasTransform = rotation !== 0 || flipH || flipV;
+    const svgMode = this.options.imageFormat === "svg";
+
+    let innerContent: string;
+    if (svgMode) {
+      let transformAttr = "";
+      if (hasTransform) {
+        const parts: string[] = [];
+        if (flipH || flipV) parts.push(`scale(${flipH ? -1 : 1},${flipV ? -1 : 1})`);
+        if (rotation !== 0) parts.push(`rotate(${rotation})`);
+        transformAttr = ` transform="${parts.join(" ")}"`;
+      }
+      innerContent = `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.max(1, widthPx)}" height="${Math.max(1, heightPx)}" viewBox="0 0 ${Math.max(1, widthPx)} ${Math.max(1, heightPx)}"><image href="${dataUri}" width="${Math.max(1, widthPx)}" height="${Math.max(1, heightPx)}" x="0" y="0"${transformAttr}/></svg>`;
+    } else {
+      // Default: plain <img> tag with optional CSS transform for rotation/flip.
+      const transformStyle = hasTransform
+        ? `transform-origin:center center;transform:${rotation ? `rotate(${rotation}deg)` : ""}${flipH ? " scaleX(-1)" : ""}${flipV ? " scaleY(-1)" : ""};`
+        : "";
+      innerContent = `<img src="${dataUri}" style="${transformStyle}max-width:none;display:block" />`;
+    }
+
+    return `<span style='mso-ignore:vglayout;position:absolute;z-index:${shapeIndex + 1};margin-left:${colOffs}px;margin-top:${rowOffs}px;width:${Math.max(1, widthPx)}px;height:${Math.max(1, heightPx)}px'>${innerContent}</span>`;
+  }
+
   private generateShapesHtml(worksheet: Worksheet): string {
     const shapes = worksheet.shapes;
     if (shapes.length === 0) return "";
@@ -989,14 +1083,20 @@ stroke-linejoin:miter;
     const maxRow = cells.length > 0 ? Math.max(...cells.map((c) => c.row)) : 0;
     const maxCol = cells.length > 0 ? Math.max(...cells.map((c) => c.col)) : 0;
 
+    // Same unit contract as writeWorksheetHtml: convert Excel chars → CSS px and pt → CSS px
+    // so every downstream consumer sees px uniformly.
+    const defaultWidthCharsG = 8.43;
+    const defaultHeightPtG = 12.75;
     const columnWidths: number[] = [];
     for (let col = 0; col <= maxCol; col++) {
-      columnWidths.push(worksheet.getColumnWidth(col) || 64);
+      const wChars = worksheet.getColumnWidth(col);
+      columnWidths.push((wChars ?? defaultWidthCharsG) * 7.5);
     }
 
     const rowHeights: number[] = [];
     for (let row = 0; row <= maxRow; row++) {
-      rowHeights.push(worksheet.getRowHeight(row) || 16);
+      const hPt = worksheet.getRowHeight(row);
+      rowHeights.push(((hPt ?? defaultHeightPtG) * 96) / 72);
     }
 
     // Calculate bounds from shapes

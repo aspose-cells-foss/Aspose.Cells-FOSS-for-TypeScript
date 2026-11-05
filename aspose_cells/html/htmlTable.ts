@@ -9,13 +9,9 @@ import type {
   Border,
   BorderLine,
   Alignment,
+  HtmlSaveOptions,
 } from "../types";
 import type { HtmlParseOptions } from "./htmlDocument";
-
-export interface HtmlSaveOptions {
-  includeStyles?: boolean;
-  borderCollapse?: boolean;
-}
 
 export interface CellStyle {
   align?: string;
@@ -690,6 +686,34 @@ export class HtmlTable {
 
           }
         }
+      } else if ((inTd || inTh) && isStart && reader.tagName === "img") {
+        // Plain HTML <img> directly inside a cell — the common case for
+        // non-Excel-generated HTML pages (base64 data URIs, local file refs, etc.).
+        const src = reader.getAttribute("src") || "";
+        const name = reader.getAttribute("name") || "";
+        const widthAttr = reader.getAttribute("width");
+        const heightAttr = reader.getAttribute("height");
+        // width/height may be bare numbers (px), "auto", or missing. Default 64 px.
+        const width = widthAttr && /^\d+$/.test(widthAttr)
+          ? parseInt(widthAttr, 10)
+          : 64;
+        const height = heightAttr && /^\d+$/.test(heightAttr)
+          ? parseInt(heightAttr, 10)
+          : 64;
+
+        // Inline <img> sits in the cell at the current visual column — no margin offsets
+        // (those only apply to absolutely-positioned mso-ignore:vglayout spans).
+        table._pictures.push({
+          row: table._rows.length,
+          col: tdVisualCol,
+          name,
+          src,
+          width,
+          height,
+          marginLeft: 0,
+          marginTop: 0,
+          zIndex: 0,
+        });
       }
     }
 

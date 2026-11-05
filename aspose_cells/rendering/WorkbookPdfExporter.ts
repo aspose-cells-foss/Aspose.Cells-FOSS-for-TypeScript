@@ -4,7 +4,7 @@ import { SheetLayout } from "./SheetLayout";
 import { Paginator } from "./Paginator";
 import { PageLayout } from "./PageLayout";
 import { PaperSizes } from "./PaperSizes";
-import { PdfSaveOptions } from "./types";
+import { PdfSaveOptions } from "../types";
 import { WorksheetDataExtractor } from "./WorksheetDataExtractor";
 import { PrintAreaRanges } from "./PrintAreaRanges";
 import { PdfTextDocumentSession } from "./PdfTextDocumentSession";
@@ -21,10 +21,10 @@ export class WorkbookPdfExporter {
     options?: PdfSaveOptions,
   ): Promise<void> {
     const opts = options ?? new PdfSaveOptions();
-    const context = new RenderContext(opts.defaultFont);
+    const context = new RenderContext(opts.DefaultFont);
 
-    if (opts.conditionalFormattingEvaluationDate) {
-      context.conditionalFormattingEvaluationDate = opts.conditionalFormattingEvaluationDate;
+    if (opts.ConditionalFormattingEvaluationDate) {
+      context.conditionalFormattingEvaluationDate = opts.ConditionalFormattingEvaluationDate;
     }
 
     // Always enable text optimization for smaller PDFs

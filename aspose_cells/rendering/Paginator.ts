@@ -2,8 +2,9 @@ import { PageLayout } from "./PageLayout";
 import { SheetLayout } from "./SheetLayout";
 import { PaperSizes } from "./PaperSizes";
 import { RenderUnits } from "./RenderUnits";
-import type { PdfSaveOptions, PageSetupData } from "./types";
+import type { PageSetupData } from "./types";
 import { PageOrientation, MergeRegion } from "./types";
+import type { PdfSaveOptions } from "../types";
 
 interface Span {
   start: number;
@@ -71,8 +72,8 @@ export class Paginator {
     const totalWidthPt = layout.columnStartPt[lastCol + 1] - layout.columnStartPt[firstCol];
     const totalHeightPt = layout.rowStartPt[lastRow + 1] - layout.rowStartPt[firstRow];
 
-    const forceOnePageWide = options.onePagePerSheet || options.allColumnsInOnePagePerSheet;
-    const forceOnePageTall = options.onePagePerSheet;
+    const forceOnePageWide = options.OnePagePerSheet || options.AllColumnsInOnePagePerSheet;
+    const forceOnePageTall = options.OnePagePerSheet;
 
     const scale = Paginator.resolveScale(
       pageSetup, options,
@@ -139,12 +140,12 @@ export class Paginator {
     usableWidthPt: number,
     usableHeightPt: number,
   ): number {
-    if (options.onePagePerSheet) {
+    if (options.OnePagePerSheet) {
       const w = totalWidthPt > 0 ? usableWidthPt / totalWidthPt : 1;
       const h = totalHeightPt > 0 ? usableHeightPt / totalHeightPt : 1;
       return Math.min(1, Math.min(w, h));
     }
-    if (options.allColumnsInOnePagePerSheet) {
+    if (options.AllColumnsInOnePagePerSheet) {
       const w = totalWidthPt > 0 ? usableWidthPt / totalWidthPt : 1;
       return Math.min(1, w);
     }

@@ -31,9 +31,10 @@ export type {
   ColorScaleRule,
   IconSetRule,
   DataBarRule,
-  SaveFormat,
   EncryptionType,
 } from "./types";
+
+export { SaveFormat, SaveOptions, PdfSaveOptions, HtmlSaveOptions } from "./types";
 
 export {
   colToIndex,

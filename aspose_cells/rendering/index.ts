@@ -14,7 +14,8 @@ export { WorksheetDataExtractor } from "./WorksheetDataExtractor";
 export { PdfTextDocumentSession } from "./PdfTextDocumentSession";
 export type { ColorValue } from "./ColorValue";
 export { RgbaColor } from "./ColorValue";
-export type { PageSetupData, PdfSaveOptions } from "./types";
+export type { PageSetupData } from "./types";
+export type { PdfSaveOptions } from "../types";
 export { PageOrientation } from "./types";
 export { MergeRegion, PageMargins } from "./types";
 

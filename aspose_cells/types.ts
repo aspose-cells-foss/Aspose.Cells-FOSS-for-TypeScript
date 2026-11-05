@@ -183,6 +183,73 @@ export enum SaveFormat {
   PDF = "pdf",
 }
 
+/**
+ * Base options controlling how a workbook is saved. Mirrors Aspose.Cells.SaveOptions.
+ * Concrete format-specific options (HtmlSaveOptions, PdfSaveOptions) inherit from this class.
+ */
+export class SaveOptions {
+  /** Output file format. Set automatically by derived constructors or callers. */
+  SaveFormat: SaveFormat = SaveFormat.XLSX;
+
+  /** Whether shared strings are used for repeated cell values. */
+  UseSharedStrings = true;
+
+  /** Whether the workbook is validated before saving. */
+  ValidateBeforeSave = true;
+
+  /** Whether equivalent styles are compacted during save. */
+  CompactStyles = true;
+
+  /** Whether recovery metadata is preserved in the saved workbook. */
+  PreserveRecoveryMetadata = false;
+}
+
+/**
+ * Options controlling XLSX-to-PDF rendering. Mirrors Aspose.Cells.PdfSaveOptions.
+ * Page geometry (paper size, orientation, margins) is configured through Worksheet.PageSetup.
+ */
+export class PdfSaveOptions extends SaveOptions {
+  constructor() {
+    super();
+    this.SaveFormat = SaveFormat.PDF;
+  }
+
+  /** When true every worksheet is rendered onto a single PDF page (no pagination). */
+  OnePagePerSheet = false;
+
+  /** When true all columns of each worksheet fit on one page width (rows may still paginate). */
+  AllColumnsInOnePagePerSheet = false;
+
+  /** Fallback font family used when a cell's configured font cannot be resolved. Empty = renderer default. */
+  DefaultFont?: string;
+
+  /** Date used to evaluate relative-date conditional formatting rules. Undefined = local date at export time. */
+  ConditionalFormattingEvaluationDate?: Date;
+}
+
+/**
+ * Options controlling XLSX-to-HTML export. Mirrors Aspose.Cells.HtmlSaveOptions where applicable.
+ */
+export class HtmlSaveOptions extends SaveOptions {
+  constructor() {
+    super();
+    this.SaveFormat = SaveFormat.HTML;
+  }
+
+  /** Whether cell styles are inlined/included in the generated HTML. Default true. */
+  includeStyles = true;
+
+  /** Whether the outer table uses border-collapse: collapse. Default true. */
+  borderCollapse = true;
+
+  /**
+   * How picture shapes are emitted in the generated HTML:
+   *   - "img" (default): a plain <img> tag with base64 data URI — widest browser support.
+   *   - "svg": an inline <svg><image .../> block that supports rotation/flip transforms.
+   */
+  imageFormat: "img" | "svg" = "img";
+}
+
 export enum EncryptionType {
   AES = "aes",
 }

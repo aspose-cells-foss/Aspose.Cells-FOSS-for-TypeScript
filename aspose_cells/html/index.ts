@@ -1,5 +1,5 @@
 export { HtmlReader } from "./htmlReader";
-export { HtmlTable, type HtmlSaveOptions } from "./htmlTable";
+export { HtmlTable } from "./htmlTable";
 export {
   HtmlWriter,
   workbookToHtml,

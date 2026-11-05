@@ -6,11 +6,15 @@ import {
   CellValue,
   Style,
   SaveFormat,
+  SaveOptions,
+  HtmlSaveOptions,
+  PdfSaveOptions,
   ShapeInfo,
   ShapeFill,
   ChartInfo,
   ImageInfo,
 } from "./types";
+import { RenderUnits } from "./rendering/RenderUnits";
 import {
   openZip as openZipUtil,
   readZipEntry as readZipEntryUtil,
@@ -411,15 +415,20 @@ export class Workbook {
 
   async save(
     filePath: string,
-    options?: { password?: string; saveFormat?: SaveFormat },
+    options?: SaveOptions | { password?: string; saveFormat?: SaveFormat },
   ) {
-    const format = options?.saveFormat || this.detectFormat(filePath);
+    // Support both the new typed SaveOptions class and the legacy loose shape
+    // { password?, saveFormat? }. Prefer the typed .SaveFormat when present.
+    const typed = options instanceof SaveOptions ? options : undefined;
+    const legacy = !typed ? (options as any) : undefined;
+    const format = typed?.SaveFormat || legacy?.saveFormat || this.detectFormat(filePath);
 
     await Workbook.assertOutputWritable(filePath);
 
     if (format === SaveFormat.PDF) {
       const { WorkbookPdfExporter } = await import("./rendering");
-      await WorkbookPdfExporter.export(this, filePath);
+      const pdfOpts = typed instanceof PdfSaveOptions ? typed : undefined;
+      await WorkbookPdfExporter.export(this, filePath, pdfOpts);
       return;
     }
 
@@ -439,13 +448,15 @@ export class Workbook {
         await mkdir(htmlDir, { recursive: true });
       }
 
-      const exporter = new HtmlExporter(this);
-      await exporter.saveAsHtmlFrameset(filePath, htmlDir, fileName);
+      const htmlOpts = typed ?? new HtmlSaveOptions();
+      const { HtmlExporter } = await import("./html/htmlExporter");
+      const exporter = new HtmlExporter(this, htmlOpts as HtmlSaveOptions);
+      await exporter.saveAsHtmlFrameset(filePath, htmlDir, fileName, htmlOpts as HtmlSaveOptions);
       return;
     }
 
     const zip = await createZipWriter();
-    await this.writeToZip(zip, options);
+    await this.writeToZip(zip, { password: legacy?.password, saveFormat: format });
     const data = await finalizeZip(zip);
     const fixedData = fixZipFile(data);
     await writeFile(filePath, Buffer.from(fixedData));
@@ -807,21 +818,28 @@ export class Workbook {
   }
 
   private calculateShapePositions(worksheet: Worksheet): void {
-    const pxToEmu = 9525;
-    const defaultColWidthEMU = 914400;
-    const defaultRowHeightEMU = 161925; // 12.75 pt * 12700 EMU/pt
+    const defaultColWidthChars = 8.43;
+    const defaultRowHeightPt = 12.75;
     const ptToEmu = 12700;
+    const pxToEmu = 9525; // 914400 EMU/in ÷ 96 px/in
+    const defaultColWidthEMU = RenderUnits.defaultColumnWidthCharsToPoints(defaultColWidthChars, 7.5) * ptToEmu;
+    const defaultRowHeightEMU = defaultRowHeightPt * ptToEmu;
 
     const colWidths: number[] = [];
     for (let c = 0; c < 20; c++) {
-      const w = worksheet.getColumnWidth(c);
-      colWidths.push(w ? w / 7 * 914400 / 8 : defaultColWidthEMU);
+      const wChars = worksheet.getColumnWidth(c);
+      // Same chars→pt→EMU chain as SheetLayout.computeColumns.
+      colWidths.push(
+        wChars !== undefined
+          ? RenderUnits.columnWidthCharsToPoints(wChars, 7.5) * ptToEmu
+          : defaultColWidthEMU
+      );
     }
 
     const rowHeights: number[] = [];
     for (let r = 0; r < 100; r++) {
-      const h = worksheet.getRowHeight(r);
-      rowHeights.push(h ? h * ptToEmu : defaultRowHeightEMU);
+      const hPt = worksheet.getRowHeight(r);
+      rowHeights.push((hPt ?? defaultRowHeightPt) * ptToEmu);
     }
 
     for (const shape of worksheet.shapes) {
@@ -920,34 +938,42 @@ export class Workbook {
 
   private getColumnPositionEMU(worksheet: Worksheet, col: number): number {
     if (col <= 0) return 0;
-    const defaultColWidth = 914400;
+    const defaultColWidthChars = 8.43;
+    const ptToEmu = 12700;
+    const defaultColWidthEMU = RenderUnits.defaultColumnWidthCharsToPoints(defaultColWidthChars, 7.5) * ptToEmu;
     let pos = 0;
     for (let c = 0; c < col; c++) {
-      const width = worksheet.getColumnWidth(c);
-      pos += width ? width / 7 * 914400 / 8 : defaultColWidth;
+      const wChars = worksheet.getColumnWidth(c);
+      pos += wChars !== undefined
+        ? RenderUnits.columnWidthCharsToPoints(wChars, 7.5) * ptToEmu
+        : defaultColWidthEMU;
     }
     return Math.round(pos);
   }
 
   private getColumnPositionEMUWithDefault(worksheet: Worksheet, col: number): number {
-    return col * 914400;
+    const defaultColWidthChars = 8.43;
+    const ptToEmu = 12700;
+    return Math.round(col * RenderUnits.defaultColumnWidthCharsToPoints(defaultColWidthChars, 7.5) * ptToEmu);
   }
 
   private getRowPositionEMU(worksheet: Worksheet, row: number): number {
     if (row <= 0) return 0;
-    const defaultRowHeight = 161925; // 12.75pt * 12700
+    const defaultRowHeightPt = 12.75;
     let pos = 0;
     for (let r = 0; r < row; r++) {
-      const height = worksheet.getRowHeight(r);
-      pos += height ? height * 12700 : defaultRowHeight;
+      const hPt = worksheet.getRowHeight(r);
+      pos += (hPt ?? defaultRowHeightPt) * 12700;
     }
     return Math.round(pos);
   }
 
   private getColumnWidthEMU(worksheet: Worksheet, col: number): number {
-    const defaultColWidth = 914400;
-    const width = worksheet.getColumnWidth(col);
-    return width ? width / 7 * 914400 / 8 : defaultColWidth;
+    const wChars = worksheet.getColumnWidth(col);
+    if (wChars !== undefined) {
+      return Math.round(RenderUnits.columnWidthCharsToPoints(wChars, 7.5) * 12700);
+    }
+    return Math.round(RenderUnits.defaultColumnWidthCharsToPoints(8.43, 7.5) * 12700);
   }
 
   private getRowHeightEMU(worksheet: Worksheet, row: number): number {

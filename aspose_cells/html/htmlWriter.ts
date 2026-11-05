@@ -1,6 +1,7 @@
 import { Workbook } from "../workbook";
 import { Worksheet } from "../worksheet";
-import { HtmlTable, HtmlSaveOptions } from "./htmlTable";
+import { HtmlTable } from "./htmlTable";
+import { HtmlSaveOptions } from "../types";
 
 export class HtmlWriter {
   static fromWorkbook(workbook: Workbook, options?: HtmlSaveOptions): string {
