@@ -3,8 +3,8 @@ import { ParsedShape } from "./ShapeData";
 import { ShapeCurveGeometry } from "./ShapeCurveGeometry";
 
 /**
- * 扩展预设几何：leftArrowCallout、mathNotEqual、flowChartMagneticDrum 等。
- * 还提供 polygon() 和 adjustment() 辅助方法。
+ * Extended preset geometries: leftArrowCallout, mathNotEqual, flowChartMagneticDrum, etc.
+ * Also provides the polygon() and adjustment() helpers.
  */
 export class ShapeExtendedGeometry {
   static build(shape: ParsedShape, r: Rect): PdfPath | null {
@@ -12,17 +12,12 @@ export class ShapeExtendedGeometry {
     if (shape.geometry === "leftArrowCallout") return ShapeExtendedGeometry.leftArrowCallout(shape, r);
     if (shape.geometry === "mathNotEqual") return ShapeExtendedGeometry.notEqual(shape, r);
     if (shape.geometry === "flowChartMagneticDrum") {
-      // pdfkit 没有 arcTo，用扇形近似
       const path = new PdfPath();
-      const l = r.left, t = r.top, right = r.right, b = r.bottom;
-      const w = r.width, h = r.height;
-      path.moveTo(l + w / 6, t);
-      path.lineTo(right - w / 6, t);
-      // 用圆弧连接（pdfkit ellipse）
-      // 简化：画一个半圆近似
-      path.lineTo(right - w / 6 + w / 6, t + h / 2);
-      path.lineTo(right - w / 6, b);
-      path.lineTo(l + w / 6, b);
+      path.moveTo(r.left + r.width / 6, r.top);
+      path.lineTo(r.right - r.width / 6, r.top);
+      path.arcTo(new Rect(r.right - r.width / 3, r.top, r.right, r.bottom), -90, 180, false);
+      path.lineTo(r.left + r.width / 6, r.bottom);
+      path.arcTo(new Rect(r.left, r.top, r.left + r.width / 3, r.bottom), 90, 180, false);
       path.close();
       return path;
     }

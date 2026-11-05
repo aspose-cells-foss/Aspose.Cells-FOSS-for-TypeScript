@@ -142,14 +142,16 @@ export class ChartRenderer {
         doc.save();
 
         // 背景填充
-        if (chart.HasChartAreaFill) {
-            doc.fillColor(chart.ChartAreaFillColor.toPdfKitColor());
-            doc.rect(area.left, area.top, area.right - area.left, area.bottom - area.top);
-            doc.fill();
-        } else {
-            doc.fillColor("#FFFFFF");
-            doc.rect(area.left, area.top, area.right - area.left, area.bottom - area.top);
-            doc.fill();
+        if (!ChartPatternRenderer.DrawChartArea(doc, area, chart)) {
+            if (chart.HasChartAreaFill) {
+                doc.fillColor(chart.ChartAreaFillColor.toPdfKitColor());
+                doc.rect(area.left, area.top, area.right - area.left, area.bottom - area.top);
+                doc.fill();
+            } else {
+                doc.fillColor("#FFFFFF");
+                doc.rect(area.left, area.top, area.right - area.left, area.bottom - area.top);
+                doc.fill();
+            }
         }
 
         // 边框
@@ -820,9 +822,23 @@ export class ChartRenderer {
                 doc.lineTo(x + swatchWidth, y + textSize / 2);
                 doc.stroke();
             } else {
-                doc.fillColor(hex);
-                doc.rect(x, y + 2, swatchWidth, Math.min(textSize - 4, 7));
-                doc.fill();
+                const swatchHeight = Math.min(textSize - 4, 7);
+                const seriesIndex = this.ResolveLegendSeriesIndex(chart, i);
+                const series = chart.Series[seriesIndex];
+                const patternDrawn = series
+                    ? ChartPatternRenderer.DrawRect(doc, {
+                        left: x,
+                        top: y + 2,
+                        right: x + swatchWidth,
+                        bottom: y + 2 + swatchHeight
+                    }, series, hex)
+                    : false;
+
+                if (!patternDrawn) {
+                    doc.fillColor(hex);
+                    doc.rect(x, y + 2, swatchWidth, swatchHeight);
+                    doc.fill();
+                }
             }
 
             // label

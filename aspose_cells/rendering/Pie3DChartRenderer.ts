@@ -1,12 +1,12 @@
 import type { ParsedChart, Rect } from "./ChartData.js";
 
 /**
- * Pie 3D 图表渲染器。
- * 使用投影算法绘制带透视效果的 3D 饼图。
+ * Pie 3D chart renderer.
+ * Draws the projected top and visible front rim of a three-dimensional pie.
  */
 export class Pie3DChartRenderer {
     /**
-     * 绘制 Pie 3D 图表，返回投影椭圆区域。
+     * Draws a Pie 3D chart and returns the projected ellipse area.
      */
     static Draw(
         doc: any,
@@ -42,68 +42,117 @@ export class Pie3DChartRenderer {
 
         if (sum <= 0) return ellipse;
 
-        const startAngle = (-90 + (chart.RotationYDeg ?? 0)) * Math.PI / 180;
+        const start = -90 + (chart.RotationYDeg ?? 0);
+        const sliceStarts: number[] = [];
+        let current = start;
+        for (let i = 0; i < values.length; i++) {
+            sliceStarts[i] = current;
+            if (!values[i].hasValue) continue;
 
-        // 先绘制可见 rim（侧面）
-        Pie3DChartRenderer.DrawVisibleRim(
-            doc, centerX, centerY, radiusX, radiusY, p, depth,
-            startAngle, values, sum, colors
-        );
+            const sweep = (Math.abs(values[i].value) / sum) * 360;
+            Pie3DChartRenderer.DrawVisibleRim(
+                doc, centerX, centerY, radiusX, radiusY, p, depth,
+                current, sweep, colors[i] ?? colors[0]
+            );
+            current += sweep;
+        }
 
-        // 再绘制顶面
-        Pie3DChartRenderer.DrawTopSurface(
-            doc, centerX, centerY, radiusX, radiusY, p,
-            startAngle, values, sum, colors
-        );
+        for (let i = values.length - 1; i >= 0; i--) {
+            if (!values[i].hasValue) continue;
+
+            const sweep = (Math.abs(values[i].value) / sum) * 360;
+            const c = colors[i] ?? colors[0];
+            doc.save();
+            doc.fillColor(Pie3DChartRenderer.Darken(c, 0.92));
+            doc.moveTo(centerX, centerY);
+            Pie3DChartRenderer.AddProjectedArc(
+                doc, centerX, centerY, radiusX, radiusY, p, depth,
+                sliceStarts[i], sliceStarts[i] + sweep, false, false
+            );
+            doc.closePath();
+            doc.fill();
+            doc.restore();
+        }
 
         return ellipse;
     }
 
     private static DrawVisibleRim(
         doc: any,
-        cx: number, cy: number, rx: number, ry: number, p: number, depth: number,
-        startAngle: number,
-        values: Array<{ hasValue: boolean; value: number }>,
-        sum: number,
-        colors: Array<{ red: number; green: number; blue: number; alpha: number }>
+        centerX: number, centerY: number, radiusX: number, radiusY: number,
+        p: number, depth: number,
+        start: number, sweep: number,
+        color: { red: number; green: number; blue: number; alpha: number }
     ): void {
-        // 简化：不单独绘制 rim 光影
+        const silhouetteAngle = Math.asin(p) * 180 / Math.PI;
+        const visibleStart = Math.max(silhouetteAngle, start);
+        const visibleEnd = Math.min(180 - silhouetteAngle, start + sweep);
+        if (visibleEnd <= visibleStart) return;
+
+        doc.save();
+        Pie3DChartRenderer.AddProjectedArc(
+            doc, centerX, centerY, radiusX, radiusY, p, depth,
+            visibleStart, visibleEnd, false, true
+        );
+        Pie3DChartRenderer.AddProjectedArc(
+            doc, centerX, centerY, radiusX, radiusY, p, depth,
+            visibleEnd, visibleStart, true, false
+        );
+        doc.closePath();
+
+        // The rim is lit from the upper left: bright near the left silhouette,
+        // falling off towards the right silhouette.
+        const gradient = doc.linearGradient(
+            centerX - radiusX, 0,
+            centerX + radiusX, 0
+        );
+        gradient.stop(0, Pie3DChartRenderer.Darken(color, 0.95));
+        gradient.stop(0.5, Pie3DChartRenderer.Darken(color, 0.70));
+        gradient.stop(1, Pie3DChartRenderer.Darken(color, 0.35));
+        doc.fill(gradient);
+        doc.restore();
     }
 
-    private static DrawTopSurface(
+    private static AddProjectedArc(
         doc: any,
-        cx: number, cy: number, rx: number, ry: number, p: number,
-        startAngle: number,
-        values: Array<{ hasValue: boolean; value: number }>,
-        sum: number,
-        colors: Array<{ red: number; green: number; blue: number; alpha: number }>
+        centerX: number, centerY: number, radiusX: number, radiusY: number,
+        p: number, depth: number,
+        start: number, end: number, lower: boolean, moveToStart: boolean
     ): void {
-        let currentAngle = startAngle;
-
-        for (let i = values.length - 1; i >= 0; i--) {
-            if (!values[i].hasValue) continue;
-            const sweep = (Math.abs(values[i].value) / sum) * Math.PI * 2;
-            const c = colors[i] ?? colors[0];
-            const h = (v: number) => Math.round(v).toString(16).padStart(2, "0");
-            const hex = `#${h(c.red)}${h(c.green)}${h(c.blue)}`;
-
-            doc.save();
-            doc.fillColor(hex);
-            doc.moveTo(cx, cy);
-            const steps = Math.max(12, Math.ceil(sweep / 0.05));
-            for (let j = 0; j <= steps; j++) {
-                const angle = currentAngle + sweep * j / steps;
-                const sine = Math.sin(angle);
-                const divisor = 1 - p * sine;
-                const x = cx + rx * Math.cos(angle) / divisor;
-                const y = cy + ry * sine / divisor;
-                doc.lineTo(x, y);
+        const segments = Math.max(1, Math.ceil(Math.abs(end - start) / 2));
+        for (let i = 0; i <= segments; i++) {
+            const angle = start + (end - start) * i / segments;
+            const point = Pie3DChartRenderer.ProjectedPoint(
+                centerX, centerY, radiusX, radiusY, p, depth, angle, lower
+            );
+            if (i === 0 && moveToStart) {
+                doc.moveTo(point.x, point.y);
+            } else {
+                doc.lineTo(point.x, point.y);
             }
-            doc.closePath();
-            doc.fill();
-            doc.restore();
-
-            currentAngle += sweep;
         }
+    }
+
+    private static ProjectedPoint(
+        centerX: number, centerY: number, radiusX: number, radiusY: number,
+        p: number, depth: number, angleDeg: number, lower: boolean
+    ): { x: number; y: number } {
+        const radians = angleDeg * Math.PI / 180;
+        const sine = Math.sin(radians);
+        const divisor = 1 - p * sine;
+        let x = centerX + radiusX * Math.cos(radians) / divisor;
+        const y = centerY + (radiusY * sine + (lower ? depth : 0)) / divisor;
+        if (lower) {
+            x = centerX + (x - centerX) * 0.978;
+        }
+        return { x, y };
+    }
+
+    private static Darken(
+        color: { red: number; green: number; blue: number; alpha: number },
+        factor: number
+    ): string {
+        const h = (v: number) => Math.round(v * factor).toString(16).padStart(2, "0");
+        return `#${h(color.red)}${h(color.green)}${h(color.blue)}`;
     }
 }

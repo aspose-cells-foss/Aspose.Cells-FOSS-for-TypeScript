@@ -1,10 +1,74 @@
 import { ShapeInfo, ShapeFill, AllConnectorShapeInfo, ImageInfo, ChartInfo } from "./types";
 import { escapeXml } from "./util";
 
+/**
+ * rId allocation plan for a drawing (mirrors the "categorized lists + formula"
+ * approach of the .NET XlsxWorkbookPictures):
+ * - Images are numbered first: rId1..rIdN (first occurrence in original shapes
+ *   order; shapes referencing the same image share one rId)
+ * - Charts follow all images: rId = imageCount + chart sequence
+ * - Chart file numbering accumulates globally across sheets:
+ *   fileIndex = chartFileOffset + chart sequence
+ * Both the drawing XML and the drawing rels consume the same plan, so the
+ * numbering cannot drift apart by construction.
+ */
+export interface DrawingRIdPlan {
+  /** imageName -> rId */
+  imageRids: Map<string, number>;
+  /** chart shape -> rId */
+  chartRids: Map<ShapeInfo, number>;
+  /** chart shape -> global chart file index (chart${fileIndex}.xml) */
+  chartFileIndexes: Map<ShapeInfo, number>;
+  imageCount: number;
+}
+
 export class ExpDrawing {
-  static generateDrawingXml(shapes: ShapeInfo[], sheetImages: ImageInfo[] = [], imageMap: Map<string, number> = new Map()): string {
+  static buildDrawingRIdPlan(
+    shapes: ShapeInfo[],
+    sheetImages: ImageInfo[] = [],
+    imageMap: Map<string, number> = new Map(),
+    chartFileOffset: number = 0,
+  ): DrawingRIdPlan {
+    const imageRids = new Map<string, number>();
+    const chartRids = new Map<ShapeInfo, number>();
+    const chartFileIndexes = new Map<ShapeInfo, number>();
+
+    let imageCount = 0;
+    for (const shape of shapes) {
+      if ((shape as any).type !== "picture") continue;
+      const imgName = (shape as any).imageName || (shape as any).imageEmbedId;
+      if (!imgName || imageRids.has(imgName)) continue;
+      const img = sheetImages.find((si) => si.name === imgName);
+      if (img && imageMap.get(img.name) !== undefined) {
+        imageRids.set(imgName, ++imageCount);
+      }
+    }
+
+    let chartSeq = 0;
+    for (const shape of shapes) {
+      if ((shape as any).type === "chart" || (shape as any).chartType) {
+        chartRids.set(shape, imageCount + chartSeq + 1);
+        chartFileIndexes.set(shape, chartFileOffset + chartSeq + 1);
+        chartSeq++;
+      }
+    }
+
+    return { imageRids, chartRids, chartFileIndexes, imageCount };
+  }
+
+  static generateDrawingXml(
+    shapes: ShapeInfo[],
+    sheetImages: ImageInfo[] = [],
+    imageMap: Map<string, number> = new Map(),
+    plan?: DrawingRIdPlan,
+  ): string {
+    if (!plan) {
+      plan = ExpDrawing.buildDrawingRIdPlan(shapes, sheetImages, imageMap);
+    }
+
     let xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:a14="http://schemas.microsoft.com/office/drawing/2010/main">`;
 
+    // zIndex sorting only determines output order (z-order); rIds come from the plan
     const sortedShapes = [...shapes].sort((a, b) => {
       const aZ = (a as any).zIndex || 0;
       const bZ = (b as any).zIndex || 0;
@@ -14,18 +78,22 @@ export class ExpDrawing {
       return aCol - bCol;
     });
 
-    let rid = 1;
-    let chartIndex = 1;
     for (let i = 0; i < sortedShapes.length; i++) {
       const shape = sortedShapes[i];
-      
+
       if ((shape as any).type === "chart" || (shape as any).chartType) {
+        const rid = plan.chartRids.get(shape);
+        if (rid === undefined) continue;
         xml += `<xdr:twoCellAnchor>`;
-        xml += ExpDrawing.chartToDrawingXml(shape as any, rid++, chartIndex++);
+        xml += ExpDrawing.chartToDrawingXml(shape as any, rid);
         xml += `<xdr:clientData/></xdr:twoCellAnchor>`;
       } else if ((shape as any).type === "picture") {
+        const imgName = (shape as any).imageName || (shape as any).imageEmbedId;
+        const embedRid = imgName ? plan.imageRids.get(imgName) : undefined;
+        // Skip anchors whose image cannot be resolved, to avoid dangling r:embed references
+        if (embedRid === undefined) continue;
         xml += `<xdr:twoCellAnchor>`;
-        xml += ExpDrawing.pictureToDrawingXml(shape as any, rid++);
+        xml += ExpDrawing.pictureToDrawingXml(shape as any, embedRid);
         xml += `<xdr:clientData/></xdr:twoCellAnchor>`;
       } else {
         xml += `<xdr:twoCellAnchor>`;
@@ -38,20 +106,20 @@ export class ExpDrawing {
     return xml;
   }
 
-  private static chartToDrawingXml(shape: any, rid: number, chartIndex: number): string {
+  private static chartToDrawingXml(shape: any, rid: number): string {
     const fromCol = shape.fromCol ?? 0;
-    const fromColOff = shape.fromColOff ?? 0;
+    const fromColOff = Math.round(shape.fromColOff ?? 0);
     const fromRow = shape.fromRow ?? 0;
-    const fromRowOff = shape.fromRowOff ?? 0;
+    const fromRowOff = Math.round(shape.fromRowOff ?? 0);
     const toCol = shape.toCol ?? 0;
-    const toColOff = shape.toColOff ?? 0;
+    const toColOff = Math.round(shape.toColOff ?? 0);
     const toRow = shape.toRow ?? 0;
-    const toRowOff = shape.toRowOff ?? 0;
+    const toRowOff = Math.round(shape.toRowOff ?? 0);
 
-    const x = shape.originalX ?? shape.x ?? 0;
-    const y = shape.originalY ?? shape.y ?? 0;
-    const cx = shape.width ?? 0;
-    const cy = shape.height ?? 0;
+    const x = Math.round(shape.originalX ?? shape.x ?? 0);
+    const y = Math.round(shape.originalY ?? shape.y ?? 0);
+    const cx = Math.round(shape.width ?? 0);
+    const cy = Math.round(shape.height ?? 0);
 
     const uniqueId = ExpDrawing.generateUniqueId();
     const extLst = `<a:extLst><a:ext uri="{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}"><a16:creationId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" id="${uniqueId}"/></a:ext></a:extLst>`;
@@ -59,26 +127,27 @@ export class ExpDrawing {
     return `<xdr:from><xdr:col>${fromCol}</xdr:col><xdr:colOff>${fromColOff}</xdr:colOff><xdr:row>${fromRow}</xdr:row><xdr:rowOff>${fromRowOff}</xdr:rowOff></xdr:from><xdr:to><xdr:col>${toCol}</xdr:col><xdr:colOff>${toColOff}</xdr:colOff><xdr:row>${toRow}</xdr:row><xdr:rowOff>${toRowOff}</xdr:rowOff></xdr:to><xdr:graphicFrame macro=""><xdr:nvGraphicFramePr><xdr:cNvPr id="${rid + 2}" name="${escapeXml(shape.name || "Chart")}">${extLst}</xdr:cNvPr><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr><xdr:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></xdr:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="rId${rid}"/></a:graphicData></a:graphic></xdr:graphicFrame>`;
   }
 
-  private static pictureToDrawingXml(shape: any, sortedIdx: number): string {
+  private static pictureToDrawingXml(shape: any, embedRid: number): string {
     const fromCol = shape.fromCol ?? 0;
-    const fromColOff = shape.fromColOff ?? 0;
+    const fromColOff = Math.round(shape.fromColOff ?? 0);
     const fromRow = shape.fromRow ?? 0;
-    const fromRowOff = shape.fromRowOff ?? 0;
+    const fromRowOff = Math.round(shape.fromRowOff ?? 0);
     const toCol = shape.toCol ?? 0;
-    const toColOff = shape.toColOff ?? 0;
+    const toColOff = Math.round(shape.toColOff ?? 0);
     const toRow = shape.toRow ?? 0;
-    const toRowOff = shape.toRowOff ?? 0;
+    const toRowOff = Math.round(shape.toRowOff ?? 0);
 
-    const cNvId = sortedIdx + 3;
-    const embedRid = sortedIdx + 1;
+    const cNvId = embedRid + 2;
 
-    const cx = shape.width ?? 64 * 9144;
-    const cy = shape.height ?? 64 * 9144;
+    const cx = Math.round(shape.width ?? 64 * 9144);
+    const cy = Math.round(shape.height ?? 64 * 9144);
+    const x = Math.round(shape.x ?? 0);
+    const y = Math.round(shape.y ?? 0);
 
     const uniqueId = ExpDrawing.generateUniqueId();
     const extLst = `<a:extLst><a:ext uri="{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}"><a16:creationId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" id="${uniqueId}"/></a:ext></a:extLst>`;
 
-    return `<xdr:from><xdr:col>${fromCol}</xdr:col><xdr:colOff>${fromColOff}</xdr:colOff><xdr:row>${fromRow}</xdr:row><xdr:rowOff>${fromRowOff}</xdr:rowOff></xdr:from><xdr:to><xdr:col>${toCol}</xdr:col><xdr:colOff>${toColOff}</xdr:colOff><xdr:row>${toRow}</xdr:row><xdr:rowOff>${toRowOff}</xdr:rowOff></xdr:to><xdr:pic><xdr:nvPicPr><xdr:cNvPr id="${cNvId}" name="${escapeXml(shape.name || "Picture")}">${extLst}</xdr:cNvPr><xdr:cNvPicPr><a:picLocks noChangeAspect="1"/></xdr:cNvPicPr></xdr:nvPicPr><xdr:blipFill><a:blip r:embed="rId${embedRid}"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr><a:xfrm><a:off x="${shape.x ?? 0}" y="${shape.y ?? 0}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"/></xdr:spPr></xdr:pic>`;
+    return `<xdr:from><xdr:col>${fromCol}</xdr:col><xdr:colOff>${fromColOff}</xdr:colOff><xdr:row>${fromRow}</xdr:row><xdr:rowOff>${fromRowOff}</xdr:rowOff></xdr:from><xdr:to><xdr:col>${toCol}</xdr:col><xdr:colOff>${toColOff}</xdr:colOff><xdr:row>${toRow}</xdr:row><xdr:rowOff>${toRowOff}</xdr:rowOff></xdr:to><xdr:pic><xdr:nvPicPr><xdr:cNvPr id="${cNvId}" name="${escapeXml(shape.name || "Picture")}">${extLst}</xdr:cNvPr><xdr:cNvPicPr><a:picLocks noChangeAspect="1"/></xdr:cNvPicPr></xdr:nvPicPr><xdr:blipFill><a:blip r:embed="rId${embedRid}"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"/></xdr:spPr></xdr:pic>`;
   }
 
   static generateUniqueId(): string {
@@ -95,13 +164,13 @@ export class ExpDrawing {
 
   static shapeToDrawingXml(shape: ShapeInfo, index: number): string {
     const fromCol = shape.fromCol;
-    const fromColOff = shape.fromColOff ?? 0;
+    const fromColOff = Math.round(shape.fromColOff ?? 0);
     const fromRow = shape.fromRow;
-    const fromRowOff = shape.fromRowOff ?? 0;
+    const fromRowOff = Math.round(shape.fromRowOff ?? 0);
     const toCol = shape.toCol;
-    const toColOff = shape.toColOff ?? 0;
+    const toColOff = Math.round(shape.toColOff ?? 0);
     const toRow = shape.toRow;
-    const toRowOff = shape.toRowOff ?? 0;
+    const toRowOff = Math.round(shape.toRowOff ?? 0);
 
     const type = shape.type;
     const typeLower = type.toLowerCase();
@@ -109,12 +178,12 @@ export class ExpDrawing {
 
     const shapeType = ExpDrawing.getDrawingShapeType(type);
     const fillXml = ExpDrawing.shapeFillToXml(shape.fill, "#ffffff");
-    const lineWidth = shape.lineWidth || 12700;
+    const lineWidth = Math.round(shape.lineWidth || 12700);
 
-    const x = shape.x ?? 0;
-    const y = shape.y ?? 0;
-    const cx = shape.width ?? 0;
-    const cy = shape.height ?? 0;
+    const x = Math.round(shape.x ?? 0);
+    const y = Math.round(shape.y ?? 0);
+    const cx = Math.round(shape.width ?? 0);
+    const cy = Math.round(shape.height ?? 0);
 
     const flipV = typeLower === "line" ? ' flipV="1"' : "";
     const uniqueId = ExpDrawing.generateUniqueId();

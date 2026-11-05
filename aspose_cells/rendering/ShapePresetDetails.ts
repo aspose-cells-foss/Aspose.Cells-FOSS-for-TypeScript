@@ -5,7 +5,7 @@ import { RgbaColor } from "./ColorValue";
 import { ShapeExtendedGeometry } from "./ShapeExtendedGeometry";
 
 /**
- * 特定预设几何的额外绘制：bevel 立体面填充、额外叠加线条等。
+ * Extra drawing for specific preset geometries: bevel face fills, additional overlay lines, etc.
  */
 export class ShapePresetDetails {
   static drawFill(doc: InstanceType<typeof PDFDocument>, r: Rect, shape: ParsedShape): boolean {
@@ -16,7 +16,7 @@ export class ShapePresetDetails {
     const y1 = r.top + inset;
     const y2 = r.bottom - inset;
 
-    // Disjoint faces: 在透明面之下不绘制基底矩形
+    // Disjoint faces: do not draw the base rectangle under a transparent face
     ShapePresetDetails.face(doc, shape.fillColor, [x1, y1, x2, y1, x2, y2, x1, y2]);
     ShapePresetDetails.face(doc, ShapePresetDetails.faceColor(shape.fillColor, 0.2), [r.left, r.top, r.right, r.top, x2, y1, x1, y1]);
     ShapePresetDetails.face(doc, ShapePresetDetails.faceColor(shape.fillColor, -0.2), [r.left, r.bottom, x1, y2, x2, y2, r.right, r.bottom]);
@@ -32,8 +32,10 @@ export class ShapePresetDetails {
     doc.lineWidth(Math.max(0.5, shape.lineWidthPt));
 
     if (shape.geometry === "flowChartMagneticDrum") {
-      // 简化：画矩形
-      doc.rect(r.right - r.width / 3, r.top, r.width / 3, r.height);
+      // Inner half of the right-hand ellipse completes the drum seam.
+      const path = new PdfPath();
+      path.arcTo(new Rect(r.right - r.width / 3, r.top, r.right, r.bottom), 90, 180, true);
+      path.draw(doc);
       doc.stroke();
     } else if (shape.geometry === "accentBorderCallout3") {
       const defaults = [0.1875, -0.08333, 0.1875, -0.16667, 1, -0.16667, 1.12963, -0.08333];

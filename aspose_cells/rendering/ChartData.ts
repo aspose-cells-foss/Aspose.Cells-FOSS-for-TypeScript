@@ -91,8 +91,11 @@ export class ChartSeries {
     DataLabelSizePt: number | null = null;
     ValueFormatCode: string = "";
 
-    // 3D 相关
+    // 3D related
     HasPatternFill: boolean = false;
+    PatternPreset: string = "";
+    PatternForegroundColor: RgbaColor = { red: 0, green: 0, blue: 0, alpha: 0, toPdfKitColor() { return ToPdfKitColor(this); } };
+    PatternBackgroundColor: RgbaColor = { red: 0, green: 0, blue: 0, alpha: 0, toPdfKitColor() { return ToPdfKitColor(this); } };
     Bubble3D: boolean = false;
 
     // 饼图
@@ -230,6 +233,9 @@ export class ParsedChart {
     ChartAreaGradientPositions: number[] = [];
     ChartAreaGradientAngleDeg: number = 0;
     HasChartAreaPattern: boolean = false;
+    ChartAreaPatternPreset: string = "";
+    ChartAreaPatternForegroundColor: RgbaColor = { red: 0, green: 0, blue: 0, alpha: 0, toPdfKitColor() { return ToPdfKitColor(this); } };
+    ChartAreaPatternBackgroundColor: RgbaColor = { red: 0xFF, green: 0xFF, blue: 0xFF, alpha: 255, toPdfKitColor() { return ToPdfKitColor(this); } };
     ChartAreaSoftEdgeRadiusPt: number = 0;
     HasChartAreaGlow: boolean = false;
     ChartAreaGlowColor: RgbaColor = { red: 0, green: 0, blue: 0, alpha: 0, toPdfKitColor() { return ToPdfKitColor(this); } };
@@ -263,6 +269,7 @@ export class ParsedChart {
     IsLine3D: boolean = false;
     IsBar3D: boolean = false;
     DepthPercent: number = 100;
+    GapDepthPercent: number = 150;
     PerspectiveDeg: number = 30;
     RightAngleAxes: boolean = true;
     RotationXDeg: number = 15;

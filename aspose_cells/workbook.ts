@@ -33,7 +33,7 @@ import {
 } from "./html/index";
 import { ChartLoader } from "./chartLoader";
 import { ImpDrawing } from "./impDrawing";
-import { ExpDrawing } from "./expDrawing";
+import { ExpDrawing, DrawingRIdPlan } from "./expDrawing";
 import { DataRelationship } from "./dataRelationship";
 
 export class Workbook {
@@ -440,8 +440,10 @@ export class Workbook {
   }
 
   /**
-   * 目标文件被其它程序（Excel / WPS / PDF 阅读器）打开时，Windows 上写入会失败甚至长时间阻塞。
-   * 这里提前检测并以明确错误快速失败，避免 save() 看起来像“卡死”。
+   * When the target file is open in another program (Excel / WPS / PDF viewer),
+   * writing on Windows fails or blocks for a long time.
+   * Detect this upfront and fail fast with a clear error, so save() does not
+   * appear to "hang".
    */
   private static async assertOutputWritable(filePath: string): Promise<void> {
     try {
@@ -451,10 +453,10 @@ export class Workbook {
     } catch (err: any) {
       if (err?.code === "EBUSY" || err?.code === "EPERM") {
         throw new Error(
-          `无法写入 "${filePath}"：文件正被其它程序占用，请关闭 Excel / WPS / PDF 阅读器后重试`,
+          `Cannot write "${filePath}": the file is locked by another program. Close Excel / WPS / PDF viewer and retry`,
         );
       }
-      // 其它错误（如只读目录）交给实际写入逻辑报错
+      // Other errors (e.g. read-only directory) are reported by the actual write logic
     }
   }
 
@@ -522,6 +524,23 @@ export class Workbook {
       }
     }
 
+    // Build an rId allocation plan per sheet (chart file indexes accumulate
+    // globally across sheets); the drawing XML, drawing rels and chart file
+    // writing all share the same plan so the numbering stays consistent
+    const sheetPlans = new Map<Worksheet, DrawingRIdPlan>();
+    let chartFileOffset = 0;
+    for (const sheet of this._sheets.worksheets) {
+      if (sheet.shapes.length === 0) continue;
+      const plan = ExpDrawing.buildDrawingRIdPlan(
+        sheet.shapes,
+        sheet.images,
+        imageMap,
+        chartFileOffset,
+      );
+      sheetPlans.set(sheet, plan);
+      chartFileOffset += plan.chartRids.size;
+    }
+
     for (let i = 0; i < this._sheets.worksheets.length; i++) {
       const sheet = this._sheets.worksheets[i];
       const sheetImgMap = sheetImageMaps[i] || new Map<string, number>();
@@ -541,14 +560,15 @@ export class Workbook {
           `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing${sheet._drawingIndex}.xml" /></Relationships>`,
         );
 
-        const drawingXml = ExpDrawing.generateDrawingXml(sheet.shapes, sheet.images, imageMap);
+        const plan = sheetPlans.get(sheet)!;
+        const drawingXml = ExpDrawing.generateDrawingXml(sheet.shapes, sheet.images, imageMap, plan);
         await addZipEntry(
           zip,
           `xl/drawings/drawing${sheet._drawingIndex}.xml`,
           drawingXml,
         );
 
-        const drawingRelsXml = this.generateDrawingRelsForSheet(sheet, imageMap);
+        const drawingRelsXml = this.generateDrawingRelsForSheet(sheet, imageMap, plan);
         await addZipEntry(
           zip,
           `xl/drawings/_rels/drawing${sheet._drawingIndex}.xml.rels`,
@@ -556,25 +576,23 @@ export class Workbook {
         );
       }
     }
-    
-    let chartIndex = 1;
+
     for (const sheet of this._sheets.worksheets) {
-      for (const shape of sheet.shapes) {
-        if ((shape as any).type === "chart" || (shape as any).chartType) {
-          const chart = shape as ChartInfo;
-          const chartXml = chart.originalChartXml || this.generateChartXml(chart);
-          await addZipEntry(zip, `xl/charts/chart${chartIndex}.xml`, chartXml);
-          if (chart.originalChartXml) {
-            const chartRelsXml = this.generateChartRels(chartIndex);
-            await addZipEntry(zip, `xl/charts/_rels/chart${chartIndex}.xml.rels`, chartRelsXml);
-            if (chart.originalStyleXml) {
-              await addZipEntry(zip, `xl/charts/style${chartIndex}.xml`, chart.originalStyleXml);
-            }
-            if (chart.originalColorsXml) {
-              await addZipEntry(zip, `xl/charts/colors${chartIndex}.xml`, chart.originalColorsXml);
-            }
+      const plan = sheetPlans.get(sheet);
+      if (!plan) continue;
+      for (const [shape, fileIndex] of plan.chartFileIndexes) {
+        const chart = shape as ChartInfo;
+        const chartXml = chart.originalChartXml || this.generateChartXml(chart);
+        await addZipEntry(zip, `xl/charts/chart${fileIndex}.xml`, chartXml);
+        if (chart.originalChartXml) {
+          const chartRelsXml = this.generateChartRels(fileIndex);
+          await addZipEntry(zip, `xl/charts/_rels/chart${fileIndex}.xml.rels`, chartRelsXml);
+          if (chart.originalStyleXml) {
+            await addZipEntry(zip, `xl/charts/style${fileIndex}.xml`, chart.originalStyleXml);
           }
-          chartIndex++;
+          if (chart.originalColorsXml) {
+            await addZipEntry(zip, `xl/charts/colors${fileIndex}.xml`, chart.originalColorsXml);
+          }
         }
       }
     }
@@ -741,39 +759,25 @@ export class Workbook {
     return `<c:valAx><c:axId val="${axId}"/><c:scaling/><c:delete val="0"/><c:axPos val="${pos}"/><c:majorGridlines/><c:numFmt formatCode="General" sourceLinked="1"/><c:majorTickMark val="none"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:crossAx val="${crossAxId}"/><c:crosses val="autoZero"/><c:crossBetween val="between"/></c:valAx>`;
   }
 
-  private generateDrawingRelsForSheet(sheet: Worksheet, globalImageMap: Map<string, number>): string {
-    const sortedShapes = [...sheet.shapes].sort((a, b) => {
-      const aZ = (a as any).zIndex || 0;
-      const bZ = (b as any).zIndex || 0;
-      if (aZ !== bZ) return aZ - bZ;
-      const aCol = (a as any).fromCol ?? 0;
-      const bCol = (b as any).fromCol ?? 0;
-      return aCol - bCol;
-    });
-
+  private generateDrawingRelsForSheet(sheet: Worksheet, globalImageMap: Map<string, number>, plan: DrawingRIdPlan): string {
     let xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`;
 
-    let rid = 1;
-    let chartIndex = 1;
-    const processedImages = new Set<string>();
-    
-    for (const shape of sortedShapes) {
-      if ((shape as any).type === "chart" || (shape as any).chartType) {
-        xml += `<Relationship Id="rId${rid++}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart${chartIndex++}.xml" />`;
-      } else if ((shape as any).type === "picture") {
-        const imgName = (shape as any).imageName || (shape as any).imageEmbedId;
-        if (imgName && !processedImages.has(imgName)) {
-          const img = sheet.images.find(i => i.name === imgName);
-          if (img) {
-            processedImages.add(imgName);
-            const globalIdx = globalImageMap.get(img.name);
-            if (globalIdx !== undefined) {
-              const ext = img.ext || "png";
-              xml += `<Relationship Id="rId${rid++}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image${globalIdx + 1}.${ext}" />`;
-            }
-          }
-        }
-      }
+    // Image rels: rId1..rIdN, exactly matching plan.imageRids
+    const imageEntries = [...plan.imageRids.entries()].sort((a, b) => a[1] - b[1]);
+    for (const [imgName, rid] of imageEntries) {
+      const img = sheet.images.find(i => i.name === imgName);
+      if (!img) continue;
+      const globalIdx = globalImageMap.get(img.name);
+      if (globalIdx === undefined) continue;
+      const ext = img.ext || "png";
+      xml += `<Relationship Id="rId${rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image${globalIdx + 1}.${ext}" />`;
+    }
+
+    // Chart rels: rId = imageCount + sequence; Target uses the global chart file index from the plan
+    const chartEntries = [...plan.chartRids.entries()].sort((a, b) => a[1] - b[1]);
+    for (const [shape, rid] of chartEntries) {
+      const fileIndex = plan.chartFileIndexes.get(shape)!;
+      xml += `<Relationship Id="rId${rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart${fileIndex}.xml" />`;
     }
 
     xml += "</Relationships>";
