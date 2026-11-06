@@ -17,12 +17,12 @@ export class SheetCellRenderer {
       if (this.layout.rowHidden[r]) continue;
       for (let c = startColumn; c <= endColumn && c <= this.layout.lastColumn; c++) {
         if (this.layout.columnHidden[c]) continue;
-        this.renderCellText(r, c);
+        this.renderCellText(r, c, page);
       }
     }
   }
 
-  private renderCellText(row: number, col: number): void {
+  private renderCellText(row: number, col: number, page: PageLayout): void {
     const cellKey = `${row},${col}`;
     const cell = this.layout.sheet.cells.get(cellKey);
     if (!cell) return;
@@ -32,8 +32,8 @@ export class SheetCellRenderer {
     const text = String(cell.value);
     if (!text) return;
 
-    const x = this.layout.columnStartPt[col];
-    const y = this.layout.rowStartPt[row];
+    const x = this.layout.contentX(page.startColumn, col);
+    const y = this.layout.contentY(page.startRow, row);
     const w = this.layout.columnWidthPt[col];
     const h = this.layout.rowHeightPt[row];
 

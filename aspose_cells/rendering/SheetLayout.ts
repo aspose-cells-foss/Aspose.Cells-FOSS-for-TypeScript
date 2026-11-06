@@ -30,6 +30,20 @@ export class SheetLayout {
   /** Cumulative top edge offsets (length lastRow+2). */
   rowStartPt: number[] = [0];
 
+  // -- Page-local coordinate helpers (the .NET ContentX / ContentY pattern). --
+  // Every Draw method MUST go through these so even pages that break at a non-zero
+  // start column/row get coordinates relative to the page's own origin, not the
+  // sheet's origin. This is the canonical fix for the "even pages are shifted right" bug.
+
+  /** x coordinate of column `col` in a page that starts at `startCol`. */
+  contentX(startCol: number, col: number): number {
+    return this.columnStartPt[col] - this.columnStartPt[startCol];
+  }
+  /** y coordinate of row `row` in a page that starts at `startRow`. */
+  contentY(startRow: number, row: number): number {
+    return this.rowStartPt[row] - this.rowStartPt[startRow];
+  }
+
   private mergeTopLeft = new Map<string, MergeRegionInfo>();
   private mergeCovered = new Set<string>();
 
