@@ -1,5 +1,5 @@
 import type { Worksheet } from "../index";
-import type { ImageInfo, ShapeInfo } from "../types";
+import type { ImageInfo, ShapeInfo, Style } from "../types";
 
 /**
  * Data extracted from a TypeScript Worksheet for the rendering pipeline.
@@ -10,6 +10,8 @@ export interface ExtractedCell {
   columnIndex: number;
   value: unknown;
   styleIndex: number;
+  /** Inline style set directly on the cell (e.g. via HTML import). Takes precedence over styleIndex lookup. */
+  style?: Style;
 }
 
 export interface MergeRegionInfo {
@@ -74,6 +76,7 @@ export class WorksheetDataExtractor {
         columnIndex: col,
         value: cell.value ?? null,
         styleIndex: cell.styleIndex ?? 0,
+        style: cell.style,
       });
 
       if (row < minRow) minRow = row;

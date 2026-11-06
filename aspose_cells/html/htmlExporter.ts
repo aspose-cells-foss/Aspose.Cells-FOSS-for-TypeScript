@@ -447,6 +447,52 @@ td
     return "";
   }
 
+  /**
+   * Generate an inline CSS string for a cell's fill (background) and borders.
+   * Used when a cell has an inline Style (no styleIndex), e.g. loaded from HTML.
+   */
+  private generateCellInlineCss(style: any): string {
+    const parts: string[] = [];
+
+    // Background fill
+    if (style.fill) {
+      const fg = this.convertColor(style.fill.fgColor);
+      const bg = this.convertColor(style.fill.bgColor);
+      const pattern = style.fill.patternType;
+      if (pattern === "solid" && fg) {
+        parts.push(`background:${fg}`);
+      } else if (pattern === "solid" && bg) {
+        parts.push(`background:${bg}`);
+      } else if (bg) {
+        parts.push(`background:${bg}`);
+      }
+    }
+
+    // Borders
+    if (style.border) {
+      const borderMap: [string, any][] = [
+        ["top", style.border.top],
+        ["right", style.border.right],
+        ["bottom", style.border.bottom],
+        ["left", style.border.left],
+      ];
+      for (const [side, border] of borderMap) {
+        if (border?.style) {
+          const width =
+            border.style === "thick"
+              ? "2px"
+              : border.style === "medium"
+                ? "1.5px"
+                : "1px";
+          const borderColor = this.convertColor(border.color) || "#000000";
+          parts.push(`border-${side}:${width} solid ${borderColor}`);
+        }
+      }
+    }
+
+    return parts.join(";");
+  }
+
   private escapeCss(str: string): string {
     return str.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
   }
@@ -670,15 +716,26 @@ ${tableHtml}
           cellAttr = `class='x${styleIndex + 1}'`;
         }
 
+        // Collect all inline style properties into a single string to avoid
+        // duplicate style attributes on the <td>.
+        const styleParts: string[] = [];
+        // Cells with an inline style (e.g. loaded from HTML) have no styleIndex,
+        // so emit the fill/border as inline CSS directly.
+        const inlineStyle = cell?.style;
+        if (inlineStyle && (inlineStyle.fill || inlineStyle.border)) {
+          const css = this.generateCellInlineCss(inlineStyle);
+          if (css) styleParts.push(css);
+        }
         if (col === 0) {
           cellAttr += ` height='${rowHeightPx}'`;
-          if (row === 0) {
-            cellAttr += ` width='${colWidth}' style='height:${rowHeightPt}pt;width:${colWidth * 0.75}pt;'`;
-          } else {
-            cellAttr += ` style='height:${rowHeightPt}pt;'`;
-          }
-        } else if (row === 0) {
-          cellAttr += ` width='${colWidth}' style='width:${colWidth * 0.75}pt;'`;
+          styleParts.push(`height:${rowHeightPt}pt`);
+        }
+        if (row === 0) {
+          cellAttr += ` width='${colWidth}'`;
+          styleParts.push(`width:${colWidth * 0.75}pt`);
+        }
+        if (styleParts.length > 0) {
+          cellAttr += ` style='${styleParts.join(";")}'`;
         }
 
         // Find shapes that start at this cell

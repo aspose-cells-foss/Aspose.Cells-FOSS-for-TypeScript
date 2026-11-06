@@ -61,12 +61,12 @@ export class WorkbookPdfExporter {
     doc.pipe(stream);
 
     if (pages.length === 0) {
-      // A valid PDF needs at least one page - emit blank A4
-      const { widthPt, heightPt } = PaperSizes.getDimensionsPoints(9);
+      // A valid PDF needs at least one page - emit blank Letter page
+      const { widthPt, heightPt } = PaperSizes.getDimensionsPoints(1);
       doc.addPage({ size: [widthPt, heightPt] });
     }
 
-    const renderer = new SheetPdfRenderer(doc as any, context);
+    const renderer = new SheetPdfRenderer(doc as any, context, workbook.worksheets.styles);
     for (const page of pages) {
       doc.addPage({ size: [page.pageWidthPt, page.pageHeightPt] });
       renderer.renderPage(page);
@@ -107,12 +107,15 @@ export class WorkbookPdfExporter {
   }
 
   private static extractPageSetup(_sheet: Worksheet) {
+    // Defaults must match what the HTML/XLSX writers emit for this codebase:
+    // <pageSetup orientation="portrait" paperSize="1"/> and
+    // <pageMargins left="0.75" right="0.75" top="1" bottom="1" header="0.5" footer="0.5"/>
     return {
-      paperSize: 9, // A4
+      paperSize: 1, // Letter
       orientation: 1, // Portrait
       margins: {
-        left: 0.7, right: 0.7, top: 0.75, bottom: 0.75,
-        header: 0.3, footer: 0.3,
+        left: 0.75, right: 0.75, top: 1, bottom: 1,
+        header: 0.5, footer: 0.5,
       },
       printArea: undefined,
       scale: undefined,

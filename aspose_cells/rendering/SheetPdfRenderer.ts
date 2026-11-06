@@ -5,6 +5,7 @@ import { SheetLayout } from "./SheetLayout";
 import { SheetCellRenderer } from "./SheetCellRenderer";
 import { ShapeRenderer } from "./ShapeRenderer";
 import type { ExtractedPicture } from "./WorksheetDataExtractor";
+import type { Style } from "../types";
 
 /**
  * Renders a single PDF page using pdfkit. Handles cell grid, pictures, and shapes.
@@ -16,6 +17,7 @@ export class SheetPdfRenderer {
   constructor(
     private doc: InstanceType<typeof PDFDocument>,
     private context: RenderContext,
+    private styles: Map<number, Style> = new Map(),
   ) {}
 
   renderPage(page: PageLayout): void {
@@ -38,7 +40,7 @@ export class SheetPdfRenderer {
     this.doc.rect(0, 0, clipW, clipH).clip();
 
     // Render cells
-    const cellRenderer = new SheetCellRenderer(this.doc, this.context, layout);
+    const cellRenderer = new SheetCellRenderer(this.doc, this.context, layout, this.styles);
     cellRenderer.renderCellGrid(page);
 
     // Render pictures anchored on this page

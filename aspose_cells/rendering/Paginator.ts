@@ -81,12 +81,20 @@ export class Paginator {
       usableWidthPt, usableHeightPt,
     );
 
+    // .NET floors each column width to a whole 96-DPI pixel before deciding where
+    // the column break falls, so the break positions match .NET/Excel exactly.
+    const columnSpanPt = (i: number) => {
+      const w = layout.columnWidthPt[i] ?? 0;
+      const px = RenderUnits.PixelsToPoints;
+      return Math.floor(w / px) * px;
+    };
+
     const colBreaks: Span[] = forceOnePageWide
       ? [{ start: firstCol, end: lastCol }]
       : Paginator.splitAxis(
           firstCol, lastCol,
           usableWidthPt / scale,
-          (i) => layout.columnWidthPt[i] ?? 0,
+          columnSpanPt,
           pageSetup.verticalPageBreaks ?? [],
         );
 
