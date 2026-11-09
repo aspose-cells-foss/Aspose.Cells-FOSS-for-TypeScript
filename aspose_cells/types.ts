@@ -248,6 +248,14 @@ export class HtmlSaveOptions extends SaveOptions {
    *   - "svg": an inline <svg><image .../> block that supports rotation/flip transforms.
    */
   imageFormat: "img" | "svg" = "img";
+
+  /**
+   * Whether pictures are inlined as base64 data URIs. Mirrors Aspose.Cells.HtmlSaveOptions.
+   *   - true (default): keep the picture bytes inside the HTML as "data:image/...;base64,...".
+   *   - false: write each picture into the export directory (the generated *_files folder)
+   *     and reference it by relative path, e.g. src="image1.png".
+   */
+  ExportImagesAsBase64 = false;
 }
 
 export enum EncryptionType {

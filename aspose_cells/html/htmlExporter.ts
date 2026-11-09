@@ -4,6 +4,7 @@ import { join } from "path";
 import type { ShapeInfo, ChartInfo, AllConnectorShapeInfo } from "../types";
 import { HtmlSaveOptions } from "../types";
 import { ChartRenderer } from "./chartRenderer";
+import { createHash } from "crypto";
 
 const EMU_PER_PIXEL = 914400 / 96;
 
@@ -11,6 +12,9 @@ export class HtmlExporter {
   private workbook: Workbook;
   private chartRenderer: ChartRenderer;
   private options: HtmlSaveOptions;
+  /** Pictures to write next to the sheet HTML when ExportImagesAsBase64 is false. */
+  private imageFiles = new Map<string, { fileName: string; data: Buffer }>();
+  private imageCounter = 0;
 
   constructor(workbook: Workbook, options?: HtmlSaveOptions) {
     this.workbook = workbook;
@@ -32,11 +36,12 @@ export class HtmlExporter {
       await mkdir(htmlDir, { recursive: true });
     }
 
+    // Reset per-export picture bookkeeping in case this exporter is reused.
+    this.imageFiles.clear();
+    this.imageCounter = 0;
+
     const mainHtml = this.generateFramesetHtml(fileName + "_files");
     await writeFile(filePath, mainHtml);
-
-    const filelistXml = this.generateFilelistXml(fileName);
-    await writeFile(join(htmlDir, "filelist.xml"), filelistXml);
 
     const stylesheetCss = this.generateStylesheetCss();
     await writeFile(join(htmlDir, "stylesheet.css"), stylesheetCss);
@@ -57,6 +62,15 @@ export class HtmlExporter {
         sheetHtml,
       );
     }
+
+    // Pictures are collected while the sheet HTML is generated, so write them
+    // (and the file list that references them) after all sheets are rendered.
+    for (const { fileName: imgFileName, data } of this.imageFiles.values()) {
+      await writeFile(join(htmlDir, imgFileName), data);
+    }
+
+    const filelistXml = this.generateFilelistXml(fileName);
+    await writeFile(join(htmlDir, "filelist.xml"), filelistXml);
 
     await writeFile(join(htmlDir, "editdata.mso"), "");
     await writeFile(join(htmlDir, "oledata.mso"), "");
@@ -297,6 +311,7 @@ function fnSetActiveSheet(iSh)
       ...this.workbook.worksheets.map(
         (_, i) => `sheet${String(i + 1).padStart(3, "0")}.htm`,
       ),
+      ...Array.from(this.imageFiles.values(), (img) => img.fileName),
       "filelist.xml",
     ];
 
@@ -1102,8 +1117,9 @@ stroke-linejoin:miter;
     heightPx += rowOffe - rowOffs;
 
     const mime = (imgExt === "jpg" || imgExt === "jpeg") ? "image/jpeg" : `image/${imgExt}`;
-    const b64 = imgData.toString("base64");
-    const dataUri = `data:${mime};base64,${b64}`;
+    const imageSrc = this.options.ExportImagesAsBase64
+      ? `data:${mime};base64,${imgData.toString("base64")}`
+      : this.registerImageFile(imgData, imgExt);
 
     const rotation = shape.rotation ?? 0;
     const flipH = !!shape.flipH;
@@ -1120,16 +1136,32 @@ stroke-linejoin:miter;
         if (rotation !== 0) parts.push(`rotate(${rotation})`);
         transformAttr = ` transform="${parts.join(" ")}"`;
       }
-      innerContent = `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.max(1, widthPx)}" height="${Math.max(1, heightPx)}" viewBox="0 0 ${Math.max(1, widthPx)} ${Math.max(1, heightPx)}"><image href="${dataUri}" width="${Math.max(1, widthPx)}" height="${Math.max(1, heightPx)}" x="0" y="0"${transformAttr}/></svg>`;
+      innerContent = `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.max(1, widthPx)}" height="${Math.max(1, heightPx)}" viewBox="0 0 ${Math.max(1, widthPx)} ${Math.max(1, heightPx)}"><image href="${imageSrc}" width="${Math.max(1, widthPx)}" height="${Math.max(1, heightPx)}" x="0" y="0"${transformAttr}/></svg>`;
     } else {
       // Default: plain <img> tag with optional CSS transform for rotation/flip.
       const transformStyle = hasTransform
         ? `transform-origin:center center;transform:${rotation ? `rotate(${rotation}deg)` : ""}${flipH ? " scaleX(-1)" : ""}${flipV ? " scaleY(-1)" : ""};`
         : "";
-      innerContent = `<img src="${dataUri}" style="${transformStyle}max-width:none;display:block" />`;
+      innerContent = `<img src="${imageSrc}" style="${transformStyle}max-width:none;display:block" />`;
     }
 
     return `<span style='mso-ignore:vglayout;position:absolute;z-index:${shapeIndex + 1};margin-left:${colOffs}px;margin-top:${rowOffs}px;width:${Math.max(1, widthPx)}px;height:${Math.max(1, heightPx)}px'>${innerContent}</span>`;
+  }
+
+  /**
+   * Registers a picture for file-based export and returns the relative src to use
+   * in the generated HTML. Identical bytes reuse the same file (content-addressed).
+   */
+  private registerImageFile(imgData: Buffer, imgExt: string): string {
+    const ext = imgExt || "png";
+    const key = createHash("sha1").update(imgData).digest("hex");
+    const existing = this.imageFiles.get(key);
+    if (existing) return existing.fileName;
+
+    const fileName = `image${this.imageCounter + 1}.${ext}`;
+    this.imageCounter++;
+    this.imageFiles.set(key, { fileName, data: imgData });
+    return fileName;
   }
 
   private generateShapesHtml(worksheet: Worksheet): string {
