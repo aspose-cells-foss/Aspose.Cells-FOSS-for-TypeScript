@@ -1,16 +1,16 @@
-import { Workbook, Worksheet, DataValidation } from "../aspose_cells";
+import { LegacyWorkbook, LegacyWorksheet, LegacyValidation } from "../aspose_cells";
 
 export async function testDataValidation() {
   console.log("Testing data validation...");
 
-  const workbook = new Workbook();
+  const workbook = new LegacyWorkbook();
   const worksheet = workbook.worksheets[0]!;
 
   worksheet.putValue("A1", "Option 1");
   worksheet.putValue("A2", "Option 2");
   worksheet.putValue("A3", "Option 3");
 
-  const validation = new DataValidation();
+  const validation = new LegacyValidation();
   validation.type = "list";
   validation.formula1 = '"Option1,Option2,Option3"';
   worksheet.addDataValidation(validation, "B1:B10");
@@ -20,14 +20,14 @@ export async function testDataValidation() {
 }
 
 export async function testNumberValidation() {
-  const workbook = new Workbook();
+  const workbook = new LegacyWorkbook();
   const worksheet = workbook.worksheets[0]!;
 
   worksheet.putValue("A1", 10);
   worksheet.putValue("A2", 20);
   worksheet.putValue("A3", 30);
 
-  const validation = new DataValidation();
+  const validation = new LegacyValidation();
   validation.type = "whole";
   validation.operator = "between";
   validation.formula1 = "1";

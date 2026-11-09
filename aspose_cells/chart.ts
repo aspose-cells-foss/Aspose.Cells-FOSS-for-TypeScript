@@ -1,8 +1,8 @@
-import type { ChartType, ChartSeries, ChartInfo } from "./types";
-import type { Worksheet } from "./worksheet";
+import type { ChartType as LegacyChartType, ChartSeries, ChartInfo } from "./types";
+import type { LegacyWorksheet } from "./worksheet";
 
-export class Chart {
-  chartType: ChartType;
+export class LegacyChart {
+  chartType: LegacyChartType;
   title?: string;
   series: ChartSeries[] = [];
   legendPosition?: "left" | "right" | "top" | "bottom";
@@ -31,14 +31,14 @@ export class Chart {
   height?: number;
   dataRange?: string;
   dataIsVertical: boolean = true;
-  private _worksheet?: Worksheet;
+  private _worksheet?: LegacyWorksheet;
 
-  constructor(type: ChartType, sheetIndex: number = 0) {
+  constructor(type: LegacyChartType, sheetIndex: number = 0) {
     this.chartType = type;
     this.sheetIndex = sheetIndex;
   }
 
-  setPosition(topRow: number, leftColumn: number, bottomRow: number, rightColumn: number): Chart {
+  setPosition(topRow: number, leftColumn: number, bottomRow: number, rightColumn: number): LegacyChart {
     this.fromRow = topRow;
     this.fromCol = leftColumn;
     this.toRow = bottomRow;
@@ -46,7 +46,7 @@ export class Chart {
     return this;
   }
 
-  setPositionWithOffset(topRow: number, top: number, leftColumn: number, left: number, height: number, width: number): Chart {
+  setPositionWithOffset(topRow: number, top: number, leftColumn: number, left: number, height: number, width: number): LegacyChart {
     this.fromRow = topRow;
     this.fromRowOff = top;
     this.fromCol = leftColumn;
@@ -58,13 +58,13 @@ export class Chart {
     return this;
   }
 
-  setDataRange(dataRange: string, isVertical: boolean): Chart {
+  setDataRange(dataRange: string, isVertical: boolean): LegacyChart {
     this.dataRange = dataRange;
     this.dataIsVertical = isVertical;
     return this;
   }
 
-  setWorksheet(worksheet: Worksheet): void {
+  setWorksheet(worksheet: LegacyWorksheet): void {
     this._worksheet = worksheet;
     this.sheetIndex = worksheet.index;
     this.rebuildSeriesFromWorksheet();
@@ -125,13 +125,87 @@ export class Chart {
     }
   }
 
-  setTitle(title: string): Chart {
+  setTitle(title: string): LegacyChart {
     this.title = title;
     return this;
   }
 
-  setLegendPosition(position: "left" | "right" | "top" | "bottom"): Chart {
+  setLegendPosition(position: "left" | "right" | "top" | "bottom"): LegacyChart {
     this.legendPosition = position;
     return this;
+  }
+}
+
+import { CellsException } from "./CellsException";
+import { ChartType } from "./enums";
+import { ChartModel } from "./Core/ChartModel";
+
+// Implemented by serializer module.
+/** Represents a chart on a worksheet. */
+export class Chart {
+  public constructor(private readonly model: ChartModel) {}
+
+  public get Model(): ChartModel {
+    return this.model;
+  }
+
+  public get Name(): string {
+    return this.model.Name;
+  }
+
+  public set Name(value: string) {
+    this.model.Name = value ?? "";
+  }
+
+  public get ChartType(): ChartType {
+    return this.model.ChartType as unknown as ChartType;
+  }
+
+  public get UpperLeftRow(): number {
+    return this.model.UpperLeftRow;
+  }
+
+  public set UpperLeftRow(value: number) {
+    if (value < 0) {
+      throw new CellsException("UpperLeftRow must be non-negative.");
+    }
+
+    this.model.UpperLeftRow = value;
+  }
+
+  public get UpperLeftColumn(): number {
+    return this.model.UpperLeftColumn;
+  }
+
+  public set UpperLeftColumn(value: number) {
+    if (value < 0) {
+      throw new CellsException("UpperLeftColumn must be non-negative.");
+    }
+
+    this.model.UpperLeftColumn = value;
+  }
+
+  public get LowerRightRow(): number {
+    return this.model.LowerRightRow;
+  }
+
+  public set LowerRightRow(value: number) {
+    this.model.LowerRightRow = value;
+  }
+
+  public get LowerRightColumn(): number {
+    return this.model.LowerRightColumn;
+  }
+
+  public set LowerRightColumn(value: number) {
+    this.model.LowerRightColumn = value;
+  }
+
+  public get ExtentCx(): number {
+    return this.model.ExtentCx;
+  }
+
+  public get ExtentCy(): number {
+    return this.model.ExtentCy;
   }
 }

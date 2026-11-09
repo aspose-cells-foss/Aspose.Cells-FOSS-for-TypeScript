@@ -1,9 +1,9 @@
-import { Workbook, Cell, SaveFormat } from "../aspose_cells";
+import { LegacyWorkbook, LegacyCell, SaveFormat } from "../aspose_cells";
 
 export async function testCellValues() {
   console.log("Testing cell values...");
 
-  const workbook = new Workbook();
+  const workbook = new LegacyWorkbook();
   const worksheet = workbook.worksheets[0]!;
 
   const intValues = [0, 1, -1, 42, 1000, -999];
@@ -61,7 +61,7 @@ export async function testCellValues() {
 }
 
 export async function testMixedValues() {
-  const workbook = new Workbook();
+  const workbook = new LegacyWorkbook();
   const worksheet = workbook.worksheets[0]!;
 
   worksheet.putValue("A1", 42);
@@ -80,7 +80,7 @@ export async function testMixedValues() {
   await workbook.save("outputfiles/test_mixed_values.xlsx");
   console.log("Saved to outputfiles/test_mixed_values.xlsx");
 
-  const loaded = await Workbook.load("outputfiles/test_mixed_values.xlsx");
+  const loaded = await LegacyWorkbook.load("outputfiles/test_mixed_values.xlsx");
   const ws = loaded.worksheets[0]!;
   console.log("Loaded A1:", ws.getCell(0, 0)?.value);
   console.log("Loaded A3:", ws.getCell(2, 0)?.value);
@@ -88,7 +88,7 @@ export async function testMixedValues() {
 }
 
 export async function testEdgeCases() {
-  const workbook = new Workbook();
+  const workbook = new LegacyWorkbook();
   const worksheet = workbook.worksheets[0]!;
 
   const cell1 = worksheet.getCell2("A1");

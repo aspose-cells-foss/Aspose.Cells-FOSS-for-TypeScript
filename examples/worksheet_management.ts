@@ -1,9 +1,9 @@
-import { Workbook, Worksheet, Cell, Style } from "../aspose_cells";
+import { LegacyWorkbook, LegacyWorksheet, LegacyCell, LegacyStyle } from "../aspose_cells";
 
 export async function testWorksheetManagement() {
   console.log("Testing worksheet management...");
 
-  const workbook = new Workbook();
+  const workbook = new LegacyWorkbook();
 
   const ws1 = workbook.worksheets.addWorksheet();
   console.log("Created worksheet:", ws1.name);
@@ -17,15 +17,15 @@ export async function testWorksheetManagement() {
   console.log("After delete:", workbook.worksheets.length);
 
   const wsMain = workbook.worksheets.addWorksheet("MainSheet");
-  wsMain.putValue("A1", "Main Worksheet");
+  wsMain.putValue("A1", "Main LegacyWorksheet");
   wsMain.putValue("A2", "This is the primary worksheet");
 
   const wsData = workbook.worksheets.addWorksheet("DataSheet");
-  wsData.putValue("A1", "Data Worksheet");
+  wsData.putValue("A1", "Data LegacyWorksheet");
   wsData.putValue("A2", "Contains data tables");
 
   const wsReport = workbook.worksheets.addWorksheet("ReportSheet");
-  wsReport.putValue("A1", "Report Worksheet");
+  wsReport.putValue("A1", "Report LegacyWorksheet");
   wsReport.putValue("A2", "Contains reports");
 
   console.log(
@@ -36,7 +36,7 @@ export async function testWorksheetManagement() {
   await workbook.save("outputfiles/test_worksheet_management.xlsx");
   console.log("Saved to outputfiles/test_worksheet_management.xlsx");
 
-  const loaded = await Workbook.load(
+  const loaded = await LegacyWorkbook.load(
     "outputfiles/test_worksheet_management.xlsx",
   );
   console.log(
@@ -46,7 +46,7 @@ export async function testWorksheetManagement() {
 }
 
 export async function testWorksheetRename() {
-  const workbook = new Workbook();
+  const workbook = new LegacyWorkbook();
 
   workbook.worksheets[0]!.name = "RenamedSheet";
   console.log("Renamed to:", workbook.worksheets[0]!.name);
@@ -56,7 +56,7 @@ export async function testWorksheetRename() {
 }
 
 export async function testWorksheetCopy() {
-  const workbook = new Workbook();
+  const workbook = new LegacyWorkbook();
 
   const ws1 = workbook.worksheets[0]!;
   ws1.putValue("A1", "Original Data");
@@ -75,15 +75,15 @@ export async function testWorksheetCopy() {
 }
 
 export async function testWorksheetAccess() {
-  const workbook = new Workbook();
+  const workbook = new LegacyWorkbook();
 
   workbook.worksheets.addWorksheet("FirstSheet");
   workbook.worksheets.addWorksheet("SecondSheet");
   workbook.worksheets.addWorksheet("ThirdSheet");
 
-  console.log("Worksheet 0:", workbook.worksheets[0]?.name);
-  console.log("Worksheet 1:", workbook.worksheets[1]?.name);
-  console.log("Worksheet 2:", workbook.worksheets[2]?.name);
+  console.log("LegacyWorksheet 0:", workbook.worksheets[0]?.name);
+  console.log("LegacyWorksheet 1:", workbook.worksheets[1]?.name);
+  console.log("LegacyWorksheet 2:", workbook.worksheets[2]?.name);
 
   await workbook.save("outputfiles/test_worksheet_access.xlsx");
 }

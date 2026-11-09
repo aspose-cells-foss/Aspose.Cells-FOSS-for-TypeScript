@@ -1,7 +1,7 @@
 import type { Hyperlink as HyperlinkType } from "./types"
 import { cellRef, escapeXml, generateUuid } from "./util"
 
-export class Hyperlink {
+export class LegacyHyperlink {
   private _row: number
   private _col: number
   private _address?: string
@@ -78,20 +78,20 @@ export class Hyperlink {
   }
 }
 
-export class HyperlinkCollection {
-  private _hyperlinks: Hyperlink[] = []
+export class LegacyHyperlinkCollection {
+  private _hyperlinks: LegacyHyperlink[] = []
 
-  add(row: number, col: number, address: string, display?: string, tooltip?: string): Hyperlink {
-    const hyperlink = new Hyperlink(row, col, address, display, tooltip)
+  add(row: number, col: number, address: string, display?: string, tooltip?: string): LegacyHyperlink {
+    const hyperlink = new LegacyHyperlink(row, col, address, display, tooltip)
     this._hyperlinks.push(hyperlink)
     return hyperlink
   }
 
-  get(index: number): Hyperlink | undefined {
+  get(index: number): LegacyHyperlink | undefined {
     return this._hyperlinks[index]
   }
 
-  getByCell(row: number, col: number): Hyperlink | undefined {
+  getByCell(row: number, col: number): LegacyHyperlink | undefined {
     return this._hyperlinks.find((h) => h.row === row && h.col === col)
   }
 
@@ -109,5 +109,142 @@ export class HyperlinkCollection {
 
   toXml(): string {
     return this._hyperlinks.map((h) => h.toXml()).join("\n")
+  }
+}
+
+import { TargetModeType } from "./enums";
+import { HyperlinkModel } from "./Core/HyperlinkModel";
+
+// Implemented by serializer module.
+/** Represents a worksheet hyperlink. */
+export class Hyperlink {
+  private readonly onDelete: ((model: HyperlinkModel) => void) | undefined;
+
+  public constructor(
+    private readonly model: HyperlinkModel,
+    onDelete?: (model: HyperlinkModel) => void,
+  ) {
+    this.onDelete = onDelete;
+  }
+
+  public get Model(): HyperlinkModel {
+    return this.model;
+  }
+
+  public get Address(): string {
+    if (this.model.Address !== null && this.model.Address !== undefined && this.model.Address.length > 0) {
+      return this.model.Address;
+    }
+
+    return this.model.SubAddress ?? "";
+  }
+
+  public set Address(value: string) {
+    Hyperlink.assignAddress(this.model, value);
+  }
+
+  public get SubAddress(): string {
+    return this.model.SubAddress ?? "";
+  }
+
+  public set SubAddress(value: string) {
+    this.model.SubAddress = value ?? "";
+  }
+
+  public get ScreenTip(): string {
+    return this.model.ScreenTip ?? "";
+  }
+
+  public set ScreenTip(value: string) {
+    this.model.ScreenTip = Hyperlink.normalizeText(value);
+  }
+
+  public get TextToDisplay(): string {
+    if (this.model.TextToDisplay !== null && this.model.TextToDisplay !== undefined && this.model.TextToDisplay.length > 0) {
+      return this.model.TextToDisplay;
+    }
+
+    return this.Address;
+  }
+
+  public set TextToDisplay(value: string) {
+    this.model.TextToDisplay = Hyperlink.normalizeText(value);
+  }
+
+  public get LinkType(): TargetModeType {
+    if (this.model.SubAddress !== null && this.model.SubAddress !== undefined && this.model.SubAddress.length > 0) {
+      return TargetModeType.CellReference;
+    }
+
+    const address = this.model.Address;
+    if (address === null || address === undefined || address.length === 0) {
+      return TargetModeType.External;
+    }
+
+    if (address.toLowerCase().startsWith("mailto:")) {
+      return TargetModeType.Email;
+    }
+
+    if (address.startsWith("\\") || address.indexOf(":\\") > 0) {
+      return TargetModeType.FilePath;
+    }
+
+    return TargetModeType.External;
+  }
+
+  public get Area(): string {
+    const first = `${Hyperlink.columnLetter(this.model.FirstColumn)}${this.model.FirstRow + 1}`;
+    if (this.model.TotalRows === 1 && this.model.TotalColumns === 1) {
+      return first;
+    }
+
+    const last = `${Hyperlink.columnLetter(this.model.FirstColumn + this.model.TotalColumns - 1)}${this.model.FirstRow + this.model.TotalRows}`;
+    return `${first}:${last}`;
+  }
+
+  public Delete(): void {
+    if (this.onDelete !== undefined) {
+      this.onDelete(this.model);
+    }
+  }
+
+  private static normalizeText(value: string | null | undefined): string {
+    return value === null || value === undefined || value.length === 0 ? "" : value;
+  }
+
+  private static assignAddress(model: HyperlinkModel, value: string | null | undefined): void {
+    if (value === null || value === undefined || value.trim().length === 0) {
+      model.Address = null;
+      model.SubAddress = null;
+      return;
+    }
+
+    const normalized = value.trim();
+    if (normalized.startsWith("#")) {
+      model.Address = null;
+      model.SubAddress = normalized.substring(1);
+      return;
+    }
+
+    if (normalized.indexOf("!") >= 0) {
+      model.Address = null;
+      model.SubAddress = normalized;
+      return;
+    }
+
+    model.Address = normalized;
+    model.SubAddress = null;
+  }
+
+  private static columnLetter(columnIndex: number): string {
+    let value = columnIndex + 1;
+    let letters = "";
+    while (value > 0) {
+      const remainder = (value - 1) % 26;
+      letters = String.fromCharCode(65 + remainder) + letters;
+      value = Math.floor((value - 1) / 26);
+    }
+
+    return letters;
   }
 }

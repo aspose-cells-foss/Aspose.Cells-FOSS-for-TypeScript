@@ -1,9 +1,9 @@
-import { Workbook, Hyperlink } from "../aspose_cells";
+import { LegacyWorkbook, LegacyHyperlink } from "../aspose_cells";
 
 export async function testHyperlinks() {
   console.log("Testing hyperlinks...");
 
-  const workbook = new Workbook();
+  const workbook = new LegacyWorkbook();
   const worksheet = workbook.worksheets[0]!;
 
   worksheet.putValue("A1", "Click here");

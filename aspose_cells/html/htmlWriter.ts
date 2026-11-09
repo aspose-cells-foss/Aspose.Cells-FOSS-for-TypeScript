@@ -1,10 +1,10 @@
-import { Workbook } from "../workbook";
-import { Worksheet } from "../worksheet";
+import { LegacyWorkbook } from "../workbook";
+import { LegacyWorksheet } from "../worksheet";
 import { HtmlTable } from "./htmlTable";
 import { HtmlSaveOptions } from "../types";
 
 export class HtmlWriter {
-  static fromWorkbook(workbook: Workbook, options?: HtmlSaveOptions): string {
+  static fromWorkbook(workbook: LegacyWorkbook, options?: HtmlSaveOptions): string {
     const tables: string[] = [];
 
     for (const worksheet of workbook.worksheets) {
@@ -25,7 +25,7 @@ ${tables.join("\n\n")}
   }
 
   static fromWorksheet(
-    worksheet: Worksheet,
+    worksheet: LegacyWorksheet,
     options?: HtmlSaveOptions,
   ): string {
     const table = new HtmlTable();
@@ -56,14 +56,14 @@ ${tables.join("\n\n")}
 }
 
 export function workbookToHtml(
-  workbook: Workbook,
+  workbook: LegacyWorkbook,
   options?: HtmlSaveOptions,
 ): string {
   return HtmlWriter.fromWorkbook(workbook, options);
 }
 
 export function worksheetToHtml(
-  worksheet: Worksheet,
+  worksheet: LegacyWorksheet,
   options?: HtmlSaveOptions,
 ): string {
   return HtmlWriter.fromWorksheet(worksheet, options);
@@ -76,7 +76,7 @@ export function tableToHtml(
   return table.toHtml(options);
 }
 
-export function workbookToHtmlFull(workbook: Workbook): string {
+export function workbookToHtmlFull(workbook: LegacyWorkbook): string {
   const sheets = workbook.worksheets.worksheets;
   let html = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 <html xmlns:v="urn:schemas-microsoft-com:vml"
@@ -87,7 +87,7 @@ xmlns="http://www.w3.org/TR/REC-html40">
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
 <meta name="ProgId" content="Excel.Sheet"/>
-<meta name="Generator" content="Aspose.Cells FOSS for TypeScript"/>
+<meta name="Generator" content="Aspose.LegacyCells FOSS for TypeScript"/>
 <style>
 <!--table
  {mso-displayed-decimal-separator:"\\.";

@@ -10,7 +10,7 @@ export {
 export { HtmlExporter } from "./htmlExporter";
 export { HtmlDocument, type HtmlParseOptions } from "./htmlDocument";
 
-export { Workbook } from "../workbook";
-export { Worksheet } from "../worksheet";
-export { Cell } from "../cell";
+export { LegacyWorkbook } from "../workbook";
+export { LegacyWorksheet } from "../worksheet";
+export { LegacyCell } from "../cell";
 export type { CellValue } from "../types";

@@ -1,5 +1,5 @@
 import { HtmlReader } from "./htmlReader";
-import { Worksheet } from "../worksheet";
+import { LegacyWorksheet } from "../worksheet";
 import { cellRef } from "../util";
 import type {
   CellValue,
@@ -130,7 +130,7 @@ export class HtmlTable {
     return tables;
   }
 
-  toWorksheet(worksheet: Worksheet, options?: HtmlParseOptions) {
+  toWorksheet(worksheet: LegacyWorksheet, options?: HtmlParseOptions) {
     const opts = {
       trimWhitespace: true,
       useFirstRowAsHeader: false,

@@ -1,5 +1,5 @@
-import { Workbook } from "../workbook";
-import { Worksheet } from "../worksheet";
+import { LegacyWorkbook } from "../workbook";
+import { LegacyWorksheet } from "../worksheet";
 import { join } from "path";
 import type { ShapeInfo, ChartInfo, AllConnectorShapeInfo } from "../types";
 import { HtmlSaveOptions } from "../types";
@@ -9,14 +9,14 @@ import { createHash } from "crypto";
 const EMU_PER_PIXEL = 914400 / 96;
 
 export class HtmlExporter {
-  private workbook: Workbook;
+  private workbook: LegacyWorkbook;
   private chartRenderer: ChartRenderer;
   private options: HtmlSaveOptions;
   /** Pictures to write next to the sheet HTML when ExportImagesAsBase64 is false. */
   private imageFiles = new Map<string, { fileName: string; data: Buffer }>();
   private imageCounter = 0;
 
-  constructor(workbook: Workbook, options?: HtmlSaveOptions) {
+  constructor(workbook: LegacyWorkbook, options?: HtmlSaveOptions) {
     this.workbook = workbook;
     this.chartRenderer = new ChartRenderer();
     this.options = options ?? new HtmlSaveOptions();
@@ -48,7 +48,7 @@ export class HtmlExporter {
 
     const tabstripHtml = this.generateTabstripHtml(
       fileName + "_files",
-      this.workbook.worksheets.map((w: Worksheet) => w.name),
+      this.workbook.worksheets.map((w: LegacyWorksheet) => w.name),
       fileName,
       this.workbook.activeTab,
     );
@@ -102,10 +102,10 @@ xmlns:x="urn:schemas-microsoft-com:office:excel"
 xmlns="http://www.w3.org/TR/REC-html40">
 
 <head>
-<meta name="Excel Workbook Frameset" content=""/>
+<meta name="Excel LegacyWorkbook Frameset" content=""/>
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
 <meta name="ProgId" content="Excel.Sheet"/>
-<meta name="Generator" content="Aspose.Cells FOSS for TypeScript"/>
+<meta name="Generator" content="Aspose.LegacyCells FOSS for TypeScript"/>
 <link rel="File-List" href="${filesDir}/filelist.xml"/>
 <link rel="Edit-Time-Data" href="${filesDir}/editdata.mso"/>
 <link rel="OLE-Object-Data" href="${filesDir}/oledata.mso"/>
@@ -529,7 +529,7 @@ td
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
 <meta name="ProgId" content="Excel.Sheet"/>
-<meta name="Generator" content="Aspose.Cells FOSS for TypeScript"/>
+<meta name="Generator" content="Aspose.LegacyCells FOSS for TypeScript"/>
 <link id="Main-File" rel="Main-File" href="../${mainFileName}.html">
 
 <script language="JavaScript">
@@ -570,7 +570,7 @@ A {
   }
 
   private generateSheetHtml(
-    worksheet: Worksheet,
+    worksheet: LegacyWorksheet,
     mainFileName: string,
     isFirst: boolean,
     sheetIndex: number,
@@ -586,7 +586,7 @@ xmlns="http://www.w3.org/TR/REC-html40">
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
 <meta name="ProgId" content="Excel.Sheet"/>
-<meta name="Generator" content="Aspose.Cells FOSS for TypeScript"/>
+<meta name="Generator" content="Aspose.LegacyCells FOSS for TypeScript"/>
 <link id="Main-File" rel="Main-File" href="../${mainFileName}.html"/>
 <link rel="File-List" href="filelist.xml"/>
 <link rel="Edit-Time-Data" href="editdata.mso"/>
@@ -647,7 +647,7 @@ ${tableHtml}
 </html>`;
   }
 
-  worksheetToHtmlForExcel(worksheet: Worksheet): string {
+  worksheetToHtmlForExcel(worksheet: LegacyWorksheet): string {
     const cells = Array.from(worksheet.cells);
     if (cells.length === 0) {
       return `<table border='0' cellpadding='0' cellspacing='0' style='border-collapse:collapse;table-layout:fixed;'></table>`;
@@ -734,7 +734,7 @@ ${tableHtml}
         // Collect all inline style properties into a single string to avoid
         // duplicate style attributes on the <td>.
         const styleParts: string[] = [];
-        // Cells with an inline style (e.g. loaded from HTML) have no styleIndex,
+        // LegacyCells with an inline style (e.g. loaded from HTML) have no styleIndex,
         // so emit the fill/border as inline CSS directly.
         const inlineStyle = cell?.style;
         if (inlineStyle && (inlineStyle.fill || inlineStyle.border)) {
@@ -797,7 +797,7 @@ ${tableHtml}
     shape: ShapeInfo,
     columnWidths: number[],
     rowHeights: number[],
-    worksheet: Worksheet,
+    worksheet: LegacyWorksheet,
     shapeIndex: number,
   ): string {
     if ("chartType" in shape) {
@@ -1084,7 +1084,7 @@ stroke-linejoin:miter;
     shape: ShapeInfo,
     columnWidths: number[],
     rowHeights: number[],
-    worksheet: Worksheet,
+    worksheet: LegacyWorksheet,
     shapeIndex: number,
   ): string {
     let imgData: Buffer | null = null;
@@ -1164,7 +1164,7 @@ stroke-linejoin:miter;
     return fileName;
   }
 
-  private generateShapesHtml(worksheet: Worksheet): string {
+  private generateShapesHtml(worksheet: LegacyWorksheet): string {
     const shapes = worksheet.shapes;
     if (shapes.length === 0) return "";
 

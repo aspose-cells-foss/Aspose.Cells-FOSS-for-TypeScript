@@ -1,5 +1,5 @@
-import { Workbook } from "../workbook";
-import { Worksheet } from "../worksheet";
+import { LegacyWorkbook } from "../workbook";
+import { LegacyWorksheet } from "../worksheet";
 import { cellRef } from "../util";
 import { HtmlTable, CellStyle } from "./htmlTable";
 import { readFile } from "fs/promises";
@@ -339,8 +339,8 @@ export class HtmlDocument {
     return this._html;
   }
 
-  toWorkbook(options?: HtmlParseOptions): Workbook {
-    const workbook = new Workbook();
+  toWorkbook(options?: HtmlParseOptions): LegacyWorkbook {
+    const workbook = new LegacyWorkbook();
     (workbook as any)._sheets.worksheets.length = 0;
 
     for (let sheetIdx = 0; sheetIdx < this._sheetData.length; sheetIdx++) {
@@ -372,7 +372,7 @@ export class HtmlDocument {
   private static syncLoadSheet(
     html: string,
     cssClasses: Map<string, CellStyle>,
-    worksheet: Worksheet,
+    worksheet: LegacyWorksheet,
     sheetIdx: number,
     htmlDir: string,
     sheetFilePath: string,

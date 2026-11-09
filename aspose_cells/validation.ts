@@ -1,7 +1,7 @@
 import type { DataValidation as DataValidationType, CellRange } from "./types";
 import { parseRange, cellRef, escapeXml } from "./util";
 
-export class DataValidation {
+export class LegacyValidation {
   private _type: DataValidationType["type"] = "any";
   private _operator?: DataValidationType["operator"];
   private _formula1?: string;
@@ -156,16 +156,16 @@ export class DataValidation {
   }
 }
 
-export class DataValidationCollection {
-  private _validations: DataValidation[] = [];
+export class LegacyValidationCollection {
+  private _validations: LegacyValidation[] = [];
 
-  add(): DataValidation {
-    const validation = new DataValidation();
+  add(): LegacyValidation {
+    const validation = new LegacyValidation();
     this._validations.push(validation);
     return validation;
   }
 
-  get(index: number): DataValidation | undefined {
+  get(index: number): LegacyValidation | undefined {
     return this._validations[index];
   }
 
@@ -183,5 +183,148 @@ export class DataValidationCollection {
 
   toXml(): string {
     return this._validations.map((v) => v.toXml()).join("\n");
+  }
+}
+
+import { CellArea } from "./CellArea";
+import { toApiCellArea } from "./CellAreaConvert";
+import { ValidationAlertType, ValidationType, OperatorType } from "./enums";
+import { ValidationModel } from "./Core/ValidationModel";
+
+// Implemented by serializer module.
+/** Represents a data validation rule. */
+export class Validation {
+  public constructor(private readonly model: ValidationModel) {}
+
+  public get Model(): ValidationModel {
+    return this.model;
+  }
+
+  public get Areas(): readonly CellArea[] {
+    return this.model.Areas.map((area) => toApiCellArea(area));
+  }
+
+  public get Type(): ValidationType {
+    return this.model.Type as unknown as ValidationType;
+  }
+
+  public set Type(value: ValidationType) {
+    this.model.Type = value as unknown as import("./ValidationType").ValidationType;
+  }
+
+  public get AlertStyle(): ValidationAlertType {
+    return this.model.AlertStyle as unknown as ValidationAlertType;
+  }
+
+  public set AlertStyle(value: ValidationAlertType) {
+    this.model.AlertStyle = value as unknown as import("./ValidationAlertType").ValidationAlertType;
+  }
+
+  public get Operator(): OperatorType {
+    return this.model.Operator as unknown as OperatorType;
+  }
+
+  public set Operator(value: OperatorType) {
+    this.model.Operator = value as unknown as import("./OperatorType").OperatorType;
+  }
+
+  public get Formula1(): string {
+    return this.model.Formula1 ?? "";
+  }
+
+  public set Formula1(value: string) {
+    this.model.Formula1 = value ?? "";
+  }
+
+  public get Formula2(): string {
+    return this.model.Formula2 ?? "";
+  }
+
+  public set Formula2(value: string) {
+    this.model.Formula2 = value ?? "";
+  }
+
+  public get IgnoreBlank(): boolean {
+    return this.model.IgnoreBlank;
+  }
+
+  public set IgnoreBlank(value: boolean) {
+    this.model.IgnoreBlank = value;
+  }
+
+  public get InCellDropDown(): boolean {
+    return this.model.InCellDropDown;
+  }
+
+  public set InCellDropDown(value: boolean) {
+    this.model.InCellDropDown = value;
+  }
+
+  public get InputTitle(): string {
+    return this.model.InputTitle ?? "";
+  }
+
+  public set InputTitle(value: string) {
+    this.model.InputTitle = value ?? "";
+  }
+
+  public get InputMessage(): string {
+    return this.model.InputMessage ?? "";
+  }
+
+  public set InputMessage(value: string) {
+    this.model.InputMessage = value ?? "";
+  }
+
+  public get ErrorTitle(): string {
+    return this.model.ErrorTitle ?? "";
+  }
+
+  public set ErrorTitle(value: string) {
+    this.model.ErrorTitle = value ?? "";
+  }
+
+  public get ErrorMessage(): string {
+    return this.model.ErrorMessage ?? "";
+  }
+
+  public set ErrorMessage(value: string) {
+    this.model.ErrorMessage = value ?? "";
+  }
+
+  public get ShowInput(): boolean {
+    return this.model.ShowInput;
+  }
+
+  public set ShowInput(value: boolean) {
+    this.model.ShowInput = value;
+  }
+
+  public get ShowError(): boolean {
+    return this.model.ShowError;
+  }
+
+  public set ShowError(value: boolean) {
+    this.model.ShowError = value;
+  }
+
+  public AddArea(area: CellArea): void {
+    this.model.Areas.push(
+      new CellArea(area.FirstRow, area.FirstColumn, area.TotalRows, area.TotalColumns),
+    );
+  }
+
+  public RemoveArea(area: CellArea): void {
+    for (let index = this.model.Areas.length - 1; index >= 0; index--) {
+      const current = this.model.Areas[index];
+      if (
+        current.StartRow <= area.EndRow &&
+        current.EndRow >= area.StartRow &&
+        current.StartColumn <= area.EndColumn &&
+        current.EndColumn >= area.StartColumn
+      ) {
+        this.model.Areas.splice(index, 1);
+      }
+    }
   }
 }

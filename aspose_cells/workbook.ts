@@ -1,12 +1,12 @@
-import { Worksheet } from "./worksheet";
-import { WorksheetCollection } from "./worksheetCollection";
-import { Cell } from "./cell";
+import { LegacyWorksheet } from "./worksheet";
+import { LegacyWorksheetCollection } from "./worksheetCollection";
+import { LegacyCell } from "./cell";
 import { DOMParser } from "@xmldom/xmldom";
 import {
   CellValue,
   Style,
-  SaveFormat,
-  SaveOptions,
+  SaveFormat as LegacySaveFormat,
+  SaveOptions as LegacySaveOptions,
   HtmlSaveOptions,
   PdfSaveOptions,
   ShapeInfo,
@@ -40,8 +40,8 @@ import { ImpDrawing } from "./impDrawing";
 import { ExpDrawing, DrawingRIdPlan } from "./expDrawing";
 import { DataRelationship } from "./dataRelationship";
 
-export class Workbook {
-  private _sheets: WorksheetCollection;
+export class LegacyWorkbook {
+  private _sheets: LegacyWorksheetCollection;
   private _sharedStrings: string[] = [];
   private _protected = false;
   private _password?: string;
@@ -50,11 +50,11 @@ export class Workbook {
   private _images: ImageInfo[] = [];
 
   constructor(createDefault: boolean = true) {
-    this._sheets = new WorksheetCollection(createDefault);
+    this._sheets = new LegacyWorksheetCollection(createDefault);
   }
 
-  static async load(filePath: string, password?: string): Promise<Workbook> {
-    const workbook = new Workbook(false);
+  static async load(filePath: string, password?: string): Promise<LegacyWorkbook> {
+    const workbook = new LegacyWorkbook(false);
     workbook._password = password;
 
     const ext = filePath.toLowerCase().split(".").pop();
@@ -70,7 +70,7 @@ export class Workbook {
     return workbook;
   }
 
-  get worksheets(): WorksheetCollection {
+  get worksheets(): LegacyWorksheetCollection {
     return this._sheets;
   }
 
@@ -298,7 +298,7 @@ export class Workbook {
         }
       }
 
-      const worksheet = new Worksheet(name, i);
+      const worksheet = new LegacyWorksheet(name, i);
       await this.loadWorksheetData(zip, worksheet, target);
       await ImpDrawing.loadWorksheetDrawing(zip, worksheet.shapes, target);
       this._sheets.worksheets.push(worksheet);
@@ -307,7 +307,7 @@ export class Workbook {
 
   private async loadWorksheetData(
     zip: any,
-    worksheet: Worksheet,
+    worksheet: LegacyWorksheet,
     path: string,
   ) {
     const content = await readZipEntryUtil(zip, `xl/${path}`);
@@ -415,24 +415,24 @@ export class Workbook {
 
   async save(
     filePath: string,
-    options?: SaveOptions | { password?: string; saveFormat?: SaveFormat },
+    options?: LegacySaveOptions | { password?: string; saveFormat?: LegacySaveFormat },
   ) {
-    // Support both the new typed SaveOptions class and the legacy loose shape
+    // Support both the new typed LegacySaveOptions class and the legacy loose shape
     // { password?, saveFormat? }. Prefer the typed .SaveFormat when present.
-    const typed = options instanceof SaveOptions ? options : undefined;
+    const typed = options instanceof LegacySaveOptions ? options : undefined;
     const legacy = !typed ? (options as any) : undefined;
     const format = typed?.SaveFormat || legacy?.saveFormat || this.detectFormat(filePath);
 
-    await Workbook.assertOutputWritable(filePath);
+    await LegacyWorkbook.assertOutputWritable(filePath);
 
-    if (format === SaveFormat.PDF) {
+    if (format === LegacySaveFormat.PDF) {
       const { WorkbookPdfExporter } = await import("./rendering");
       const pdfOpts = typed instanceof PdfSaveOptions ? typed : undefined;
       await WorkbookPdfExporter.export(this, filePath, pdfOpts);
       return;
     }
 
-    if (format === SaveFormat.HTML) {
+    if (format === LegacySaveFormat.HTML) {
       const dir = dirname(filePath);
       const fileName =
         filePath
@@ -462,14 +462,14 @@ export class Workbook {
     await writeFile(filePath, Buffer.from(fixedData));
   }
 
-  private detectFormat(filePath: string): SaveFormat {
+  private detectFormat(filePath: string): LegacySaveFormat {
     const ext = filePath.toLowerCase().split(".").pop();
-    if (ext === "pdf") return SaveFormat.PDF;
-    if (ext === "html" || ext === "htm") return SaveFormat.HTML;
-    if (ext === "csv") return SaveFormat.CSV;
-    if (ext === "json") return SaveFormat.JSON;
-    if (ext === "md" || ext === "markdown") return SaveFormat.MARKDOWN;
-    return SaveFormat.XLSX;
+    if (ext === "pdf") return LegacySaveFormat.PDF;
+    if (ext === "html" || ext === "htm") return LegacySaveFormat.HTML;
+    if (ext === "csv") return LegacySaveFormat.CSV;
+    if (ext === "json") return LegacySaveFormat.JSON;
+    if (ext === "md" || ext === "markdown") return LegacySaveFormat.MARKDOWN;
+    return LegacySaveFormat.XLSX;
   }
 
   /**
@@ -499,7 +499,7 @@ export class Workbook {
 
   private async writeToZip(
     zip: any,
-    options?: { password?: string; saveFormat?: SaveFormat },
+    options?: { password?: string; saveFormat?: LegacySaveFormat },
   ) {
     this.generateSharedStrings();
     this.collectCellStyles();
@@ -560,7 +560,7 @@ export class Workbook {
     // Build an rId allocation plan per sheet (chart file indexes accumulate
     // globally across sheets); the drawing XML, drawing rels and chart file
     // writing all share the same plan so the numbering stays consistent
-    const sheetPlans = new Map<Worksheet, DrawingRIdPlan>();
+    const sheetPlans = new Map<LegacyWorksheet, DrawingRIdPlan>();
     let chartFileOffset = 0;
     for (const sheet of this._sheets.worksheets) {
       if (sheet.shapes.length === 0) continue;
@@ -792,7 +792,7 @@ export class Workbook {
     return `<c:valAx><c:axId val="${axId}"/><c:scaling/><c:delete val="0"/><c:axPos val="${pos}"/><c:majorGridlines/><c:numFmt formatCode="General" sourceLinked="1"/><c:majorTickMark val="none"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:crossAx val="${crossAxId}"/><c:crosses val="autoZero"/><c:crossBetween val="between"/></c:valAx>`;
   }
 
-  private generateDrawingRelsForSheet(sheet: Worksheet, globalImageMap: Map<string, number>, plan: DrawingRIdPlan): string {
+  private generateDrawingRelsForSheet(sheet: LegacyWorksheet, globalImageMap: Map<string, number>, plan: DrawingRIdPlan): string {
     let xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`;
 
     // Image rels: rId1..rIdN, exactly matching plan.imageRids
@@ -817,7 +817,7 @@ export class Workbook {
     return xml;
   }
 
-  private calculateShapePositions(worksheet: Worksheet): void {
+  private calculateShapePositions(worksheet: LegacyWorksheet): void {
     const defaultColWidthChars = 8.43;
     const defaultRowHeightPt = 12.75;
     const ptToEmu = 12700;
@@ -936,7 +936,7 @@ export class Workbook {
     }
   }
 
-  private getColumnPositionEMU(worksheet: Worksheet, col: number): number {
+  private getColumnPositionEMU(worksheet: LegacyWorksheet, col: number): number {
     if (col <= 0) return 0;
     const defaultColWidthChars = 8.43;
     const ptToEmu = 12700;
@@ -951,13 +951,13 @@ export class Workbook {
     return Math.round(pos);
   }
 
-  private getColumnPositionEMUWithDefault(worksheet: Worksheet, col: number): number {
+  private getColumnPositionEMUWithDefault(worksheet: LegacyWorksheet, col: number): number {
     const defaultColWidthChars = 8.43;
     const ptToEmu = 12700;
     return Math.round(col * RenderUnits.defaultColumnWidthCharsToPoints(defaultColWidthChars, 7.5) * ptToEmu);
   }
 
-  private getRowPositionEMU(worksheet: Worksheet, row: number): number {
+  private getRowPositionEMU(worksheet: LegacyWorksheet, row: number): number {
     if (row <= 0) return 0;
     const defaultRowHeightPt = 12.75;
     let pos = 0;
@@ -968,7 +968,7 @@ export class Workbook {
     return Math.round(pos);
   }
 
-  private getColumnWidthEMU(worksheet: Worksheet, col: number): number {
+  private getColumnWidthEMU(worksheet: LegacyWorksheet, col: number): number {
     const wChars = worksheet.getColumnWidth(col);
     if (wChars !== undefined) {
       return Math.round(RenderUnits.columnWidthCharsToPoints(wChars, 7.5) * 12700);
@@ -976,13 +976,13 @@ export class Workbook {
     return Math.round(RenderUnits.defaultColumnWidthCharsToPoints(8.43, 7.5) * 12700);
   }
 
-  private getRowHeightEMU(worksheet: Worksheet, row: number): number {
+  private getRowHeightEMU(worksheet: LegacyWorksheet, row: number): number {
     const defaultRowHeight = 161925; // 12.75pt * 12700
     const height = worksheet.getRowHeight(row);
     return height ? height * 12700 : defaultRowHeight;
   }
 
-  private getAnchorForPositionEMU(worksheet: Worksheet, xEmu: number, yEmu: number): { col: number; colOff: number; row: number; rowOff: number } {
+  private getAnchorForPositionEMU(worksheet: LegacyWorksheet, xEmu: number, yEmu: number): { col: number; colOff: number; row: number; rowOff: number } {
     let col = 0;
     let colPos = 0;
     while (colPos + this.getColumnWidthEMU(worksheet, col) <= xEmu) {
@@ -1018,7 +1018,7 @@ export class Workbook {
     );
   }
 
-  private generateDrawingXml(worksheet: Worksheet): string {
+  private generateDrawingXml(worksheet: LegacyWorksheet): string {
     return ExpDrawing.generateDrawingXml(worksheet.shapes);
   }
 
@@ -1392,9 +1392,9 @@ export class Workbook {
     const uniqueStrings = Array.from(strings);
     // Populate the workbook's shared strings array for later use (e.g., relations)
     this._sharedStrings = uniqueStrings;
-    // Update Cell static map for string lookup during XML generation
-    // @ts-ignore – using static method defined in Cell
-    (Cell as any).setSharedStrings(uniqueStrings);
+    // Update LegacyCell static map for string lookup during XML generation
+    // @ts-ignore – using static method defined in LegacyCell
+    (LegacyCell as any).setSharedStrings(uniqueStrings);
 
     if (uniqueStrings.length === 0) return "";
     let xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${uniqueStrings.length}" uniqueCount="${uniqueStrings.length}">`;
@@ -1472,5 +1472,258 @@ export class Workbook {
     }
 
     return lines.join("\n");
+  }
+}
+
+import { readFileSync, writeFileSync } from "fs";
+import { DefinedNameCollection } from "./DefinedNameCollection";
+import { DefinedNameModel } from "./Core/DefinedNameModel";
+import { DocumentProperties } from "./DocumentProperties";
+import { CellsException } from "./CellsException";
+import { LoadDiagnostics } from "./LoadDiagnostics";
+import { LoadOptions } from "./LoadOptions";
+import { SaveFormat } from "./enums";
+import { SaveOptions } from "./SaveOptions";
+import { UnsupportedFeatureException } from "./UnsupportedFeatureException";
+import { WorkbookLoadException } from "./WorkbookLoadException";
+import { WorkbookModel } from "./Core/WorkbookModel";
+import { WorkbookProperties } from "./WorkbookProperties";
+import { WorkbookSaveException } from "./WorkbookSaveException";
+import { WorkbookSettings } from "./WorkbookSettings";
+import { WorksheetCollection, createWorksheetCollection } from "./worksheetCollection";
+import { WorksheetModel } from "./Core/WorksheetModel";
+// Supplied by the serializer module once it is implemented in api/xlsx/WorkbookSerializer.ts.
+import { loadWorkbook, saveWorkbook } from "./XlsxWorkbookSerializer";
+
+/** Minimal in-memory stream shim supported by save and load overloads. */
+export interface InputStream {
+  toBuffer(): Buffer;
+}
+
+/** Minimal in-memory stream shim supported by save overloads. */
+export interface OutputStream {
+  write(buffer: Buffer): void;
+}
+
+/** Represents the root spreadsheet object used to create, load, modify, and save a workbook. */
+export class Workbook {
+  private readonly model: WorkbookModel;
+  private readonly worksheets: WorksheetCollection;
+  private readonly settings: WorkbookSettings;
+  private readonly properties: WorkbookProperties;
+  private readonly documentProperties: DocumentProperties;
+  private readonly definedNames: DefinedNameCollection;
+
+  public constructor();
+  public constructor(fileName: string);
+  public constructor(fileName: string, options: LoadOptions);
+  public constructor(target: InputStream);
+  public constructor(target: InputStream, options: LoadOptions);
+  public constructor(targetOrFileName?: string | InputStream, options?: LoadOptions) {
+    this.model = new WorkbookModel();
+
+    const worksheets = createWorksheetCollection(this);
+    this.worksheets = worksheets;
+    this.settings = new WorkbookSettings(this.model.Settings);
+    this.properties = new WorkbookProperties(this.model);
+    this.documentProperties = new DocumentProperties(this.model.DocumentProperties);
+    this.definedNames = new DefinedNameCollection(this);
+    this.LoadDiagnostics = new LoadDiagnostics();
+
+    if (targetOrFileName === undefined) {
+      return;
+    }
+
+    const loadOptions = options ?? new LoadOptions();
+    if (typeof targetOrFileName === "string") {
+      this.loadFromBuffer(readFileSync(targetOrFileName), loadOptions);
+      return;
+    }
+
+    this.loadFromBuffer(targetOrFileName.toBuffer(), loadOptions);
+  }
+
+  /** Gets the worksheets in workbook order. */
+  public get Worksheets(): WorksheetCollection {
+    return this.worksheets;
+  }
+
+  /** Gets workbook-level settings such as the date system and display culture. */
+  public get Settings(): WorkbookSettings {
+    return this.settings;
+  }
+
+  /** Gets workbook metadata and view settings exposed by the supported public API. */
+  public get Properties(): WorkbookProperties {
+    return this.properties;
+  }
+
+  /** Gets the document properties facade for core and extended metadata. */
+  public get DocumentProperties(): DocumentProperties {
+    return this.documentProperties;
+  }
+
+  /** Gets the workbook-defined names collection. */
+  public get DefinedNames(): DefinedNameCollection {
+    return this.definedNames;
+  }
+
+  /** Gets diagnostics collected while loading the current workbook. */
+  public readonly LoadDiagnostics: LoadDiagnostics;
+
+  /** Gets the underlying core model. */
+  public get Model(): WorkbookModel {
+    return this.model;
+  }
+
+  /** Throws when another worksheet already uses the supplied name. */
+  public EnsureUniqueSheetName(sheetName: string, currentSheet?: WorksheetModel | null): void {
+    for (const existing of this.model.Worksheets) {
+      if (existing === currentSheet) {
+        continue;
+      }
+
+      if (existing.Name.toLowerCase() === sheetName.toLowerCase()) {
+        throw new CellsException(`Worksheet name '${sheetName}' already exists.`);
+      }
+    }
+  }
+
+  /** Throws when a defined name scope is not a valid worksheet index. */
+  public EnsureValidDefinedNameScope(localSheetIndex: number | null): void {
+    if (localSheetIndex === null || localSheetIndex === undefined) {
+      return;
+    }
+
+    if (localSheetIndex < 0 || localSheetIndex >= this.model.Worksheets.length) {
+      throw new CellsException("Defined name scope must refer to an existing worksheet.");
+    }
+  }
+
+  /** Throws when a defined name duplicates an existing name in the same scope. */
+  public EnsureUniqueDefinedName(
+    currentDefinedName: DefinedNameModel | null,
+    name: string,
+    localSheetIndex: number | null,
+  ): void {
+    for (const existing of this.model.DefinedNames) {
+      if (existing === currentDefinedName) {
+        continue;
+      }
+
+      if (existing.Name.toLowerCase() !== name.toLowerCase()) {
+        continue;
+      }
+
+      if (Workbook.sameDefinedNameScope(existing.LocalSheetIndex, localSheetIndex)) {
+        throw new CellsException(`Defined name '${name}' already exists in the same scope.`);
+      }
+    }
+  }
+
+  /** Saves the workbook to an XLSX file using default save options. */
+  public Save(fileName: string): void;
+  /** Saves the workbook to a file using the specified save format. */
+  public Save(fileName: string, format: SaveFormat): void;
+  /** Saves the workbook to a file using explicit save options. */
+  public Save(fileName: string, options: SaveOptions): void;
+  /** Saves the workbook to a stream using the specified save format. */
+  public Save(target: OutputStream, format: SaveFormat): void;
+  /** Saves the workbook to a stream using explicit save options. */
+  public Save(target: OutputStream, options: SaveOptions): void;
+  public Save(target: string | OutputStream, formatOrOptions?: SaveFormat | SaveOptions): void {
+    const options = Workbook.resolveSaveOptions(target, formatOrOptions);
+
+    try {
+      const buffer = Workbook.serialize(this.model, options);
+      if (typeof target === "string") {
+        writeFileSync(target, buffer);
+        return;
+      }
+
+      target.write(buffer);
+    } catch (error) {
+      if (error instanceof CellsException) {
+        throw error;
+      }
+
+      throw new WorkbookSaveException("Failed to save workbook.", error);
+    }
+  }
+
+  /** Releases resources associated with the workbook instance. */
+  public Dispose(): void {
+    // Retained for Aspose-compatible API shape.
+  }
+
+  private static resolveSaveOptions(
+    target: string | OutputStream,
+    formatOrOptions?: SaveFormat | SaveOptions,
+  ): SaveOptions {
+    if (formatOrOptions === undefined) {
+      const defaults = new SaveOptions();
+      if (typeof target === "string" && target.toLowerCase().endsWith(".pdf")) {
+        defaults.SaveFormat = SaveFormat.Pdf;
+      }
+
+      return defaults;
+    }
+
+    if (typeof formatOrOptions === "number") {
+      const byFormat = new SaveOptions();
+      byFormat.SaveFormat = formatOrOptions;
+      return byFormat;
+    }
+
+    return formatOrOptions;
+  }
+
+  private static serialize(model: WorkbookModel, options: SaveOptions): Buffer {
+    if (options.SaveFormat === SaveFormat.Pdf) {
+      throw new UnsupportedFeatureException("PDF export is not wired yet.");
+    }
+
+    return saveWorkbook(model, options);
+  }
+
+  private static sameDefinedNameScope(left: number | null, right: number | null): boolean {
+    if (left === null && right === null) {
+      return true;
+    }
+
+    return left !== null && right !== null && left === right;
+  }
+
+  private loadFromBuffer(data: Buffer, options: LoadOptions): void {
+    try {
+      const loaded = loadWorkbook(data, options, this.LoadDiagnostics);
+      this.model.Worksheets.splice(0, this.model.Worksheets.length, ...loaded.Worksheets);
+      this.model.Settings.DateSystem = loaded.Settings.DateSystem;
+      this.model.Settings.DisplayCulture = { Name: loaded.Settings.DisplayCulture.Name };
+      this.model.Properties.CopyFrom(loaded.Properties);
+      this.model.DocumentProperties.CopyFrom(loaded.DocumentProperties);
+      this.model.DefaultStyle = loaded.DefaultStyle.clone();
+      this.model.ActiveSheetIndex = loaded.ActiveSheetIndex;
+      this.model.DefinedNames.splice(0, this.model.DefinedNames.length, ...loaded.DefinedNames);
+      this.model.RawThemeXml = loaded.RawThemeXml;
+      this.model.RawTableStylesXml = loaded.RawTableStylesXml;
+      this.model.TableDifferentialStyles.splice(
+        0,
+        this.model.TableDifferentialStyles.length,
+        ...loaded.TableDifferentialStyles,
+      );
+      this.model.RawTableDifferentialStylesXml.splice(
+        0,
+        this.model.RawTableDifferentialStylesXml.length,
+        ...loaded.RawTableDifferentialStylesXml,
+      );
+      this.model.ExternalLinks.splice(0, this.model.ExternalLinks.length, ...loaded.ExternalLinks);
+    } catch (error) {
+      if (error instanceof CellsException) {
+        throw error;
+      }
+
+      throw new WorkbookLoadException("Failed to load XLSX workbook.", error);
+    }
   }
 }

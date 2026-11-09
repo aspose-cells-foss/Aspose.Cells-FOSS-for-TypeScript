@@ -1,0 +1,76 @@
+import { AutoFilterModel } from "./AutoFilterModel";
+import { CellAddress } from "./CellAddress";
+import { CellRecord } from "./CellRecord";
+import { ChartModel } from "./ChartModel";
+import { ColorValue } from "./ColorValue";
+import { ColumnRangeModel } from "./ColumnRangeModel";
+import { CommentModel } from "./CommentModel";
+import { ConditionalFormattingModel } from "./ConditionalFormattingModel";
+import { DrawingRelationshipModel } from "./DrawingRelationshipModel";
+import { HyperlinkModel } from "./HyperlinkModel";
+import { ListObjectModel } from "./ListObjectModel";
+import { MergeRegion } from "./MergeRegion";
+import { PageSetupModel } from "./PageSetupModel";
+import { PictureModel } from "./PictureModel";
+import { RowModel } from "./RowModel";
+import { ShapeImageModel } from "./ShapeImageModel";
+import { ShapeModel } from "./ShapeModel";
+import { SheetVisibility } from "./SheetVisibility";
+import { SmartArtModel } from "./SmartArtModel";
+import { ValidationModel } from "./ValidationModel";
+import { WorksheetProtectionModel } from "./WorksheetProtectionModel";
+import { WorksheetViewModel } from "./WorksheetViewModel";
+
+export class WorksheetModel {
+  public Name: string;
+  public Visibility: SheetVisibility = SheetVisibility.Visible;
+  public readonly Cells: Map<CellAddress, CellRecord>;
+  public readonly Rows: Map<number, RowModel>;
+  public readonly Columns: ColumnRangeModel[];
+  public readonly MergeRegions: MergeRegion[];
+  public readonly Hyperlinks: HyperlinkModel[];
+  public readonly Validations: ValidationModel[];
+  public readonly ConditionalFormattings: ConditionalFormattingModel[];
+  public readonly PageSetup: PageSetupModel;
+  public readonly View: WorksheetViewModel;
+  public readonly Protection: WorksheetProtectionModel;
+  public readonly AutoFilter: AutoFilterModel;
+  public readonly ListObjects: ListObjectModel[];
+  public readonly Pictures: PictureModel[];
+  public readonly ShapeImages: ShapeImageModel[];
+  public readonly Shapes: ShapeModel[];
+  public readonly SmartArts: SmartArtModel[];
+  public readonly Charts: ChartModel[];
+  public readonly PreservedCharts: ChartModel[];
+  public readonly PreservedDrawingRelationships: DrawingRelationshipModel[];
+  public readonly Comments: CommentModel[];
+  public TabColor: ColorValue | null = null;
+  public BaseColumnWidth: number | null = null;
+  public DefaultColumnWidth: number | null = null;
+  public DefaultRowHeight: number | null = null;
+  public CustomHeight: boolean | null = null;
+
+  public constructor(name: string) {
+    this.Name = name;
+    this.Cells = new Map<CellAddress, CellRecord>();
+    this.Rows = new Map<number, RowModel>();
+    this.Columns = [];
+    this.MergeRegions = [];
+    this.Hyperlinks = [];
+    this.Validations = [];
+    this.ConditionalFormattings = [];
+    this.PageSetup = new PageSetupModel();
+    this.View = new WorksheetViewModel();
+    this.Protection = new WorksheetProtectionModel();
+    this.AutoFilter = new AutoFilterModel();
+    this.ListObjects = [];
+    this.Pictures = [];
+    this.ShapeImages = [];
+    this.Shapes = [];
+    this.SmartArts = [];
+    this.Charts = [];
+    this.PreservedCharts = [];
+    this.PreservedDrawingRelationships = [];
+    this.Comments = [];
+  }
+}

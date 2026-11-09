@@ -1,9 +1,9 @@
-import { Workbook, AutoFilter } from "../aspose_cells";
+import { LegacyWorkbook, LegacyAutoFilter } from "../aspose_cells";
 
 export async function testAutoFilter() {
   console.log("Testing auto filter...");
 
-  const workbook = new Workbook();
+  const workbook = new LegacyWorkbook();
   const worksheet = workbook.worksheets[0]!;
 
   worksheet.putValue("A1", "Name");
@@ -29,7 +29,7 @@ export async function testAutoFilter() {
 }
 
 export async function testAutoFilterWithData() {
-  const workbook = new Workbook();
+  const workbook = new LegacyWorkbook();
   const worksheet = workbook.worksheets[0]!;
 
   for (let i = 0; i < 10; i++) {

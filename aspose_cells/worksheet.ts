@@ -1,5 +1,5 @@
-import { Cells, Cell } from "./cell";
-import { ChartCollection } from "./chartCollection";
+import { LegacyCells, LegacyCell } from "./cell";
+import { LegacyChartCollection } from "./chartCollection";
 import type {
   CellValue,
   Style,
@@ -13,10 +13,10 @@ import type {
 } from "./types";
 import { cellRef, parseCellRef, parseRange } from "./util";
 
-export class Worksheet {
+export class LegacyWorksheet {
   private _name: string;
   private _index: number;
-  private _cells = new Cells();
+  private _cells = new LegacyCells();
   private _dataValidations: DataValidation[] = [];
   private _comments: Comment[] = [];
   private _hyperlinks: { cell: string; link: Hyperlink }[] = [];
@@ -36,7 +36,7 @@ export class Worksheet {
   private _hiddenRows: Set<number> = new Set<number>();
   private _shapes: ShapeInfo[] = [];
   private _images: ImageInfo[] = [];
-  private _charts: ChartCollection;
+  private _charts: LegacyChartCollection;
   private _defaultColumnWidth?: number;
   private _defaultRowHeight?: number;
   _drawingIndex: number = 0;
@@ -44,7 +44,7 @@ export class Worksheet {
   constructor(name: string, index: number) {
     this._name = name;
     this._index = index;
-    this._charts = new ChartCollection(index, this);
+    this._charts = new LegacyChartCollection(index, this);
   }
 
   get name(): string {
@@ -63,15 +63,15 @@ export class Worksheet {
     return this._cells;
   }
 
-  getCell(row: number, col: number): Cell | undefined {
+  getCell(row: number, col: number): LegacyCell | undefined {
     return this._cells.get(cellRef(row, col));
   }
 
-  getCellByRef(ref: string): Cell | undefined {
+  getCellByRef(ref: string): LegacyCell | undefined {
     return this._cells.get(ref);
   }
 
-  getCell2(key: string): Cell {
+  getCell2(key: string): LegacyCell {
     if (/^[A-Z]+\d+$/.test(key)) {
       const { row, col } = parseCellRef(key);
       return this._cells.getOrCreate(row, col);
@@ -79,7 +79,7 @@ export class Worksheet {
     throw new Error(`Invalid cell reference: ${key}`);
   }
 
-  putValue(key: string, value: CellValue): Cell {
+  putValue(key: string, value: CellValue): LegacyCell {
     const { row, col } = parseCellRef(key);
     const cell = this._cells.getOrCreate(row, col);
     cell.putValue(value);
@@ -215,7 +215,7 @@ export class Worksheet {
     return this._shapes;
   }
 
-  get charts(): ChartCollection {
+  get charts(): LegacyChartCollection {
     return this._charts;
   }
 
@@ -258,7 +258,7 @@ export class Worksheet {
       }
     }
 
-    const rows = new Map<number, Cell[]>();
+    const rows = new Map<number, LegacyCell[]>();
     let minRow = Infinity,
       maxRow = -Infinity,
       minCol = Infinity,
@@ -331,5 +331,277 @@ export class Worksheet {
 
   getXml(drawingIndex: number = 0): string {
     return this.toXml(drawingIndex);
+  }
+}
+
+import { AutoFilter } from "./autofilter";
+import { Cells } from "./Cells";
+import { ChartCollection } from "./chartCollection";
+import { CellsException } from "./CellsException";
+import { Color } from "./Color";
+import { ColorValue } from "./Core/ColorValue";
+import { CommentCollection } from "./CommentCollection";
+import { ConditionalFormattingCollection } from "./ConditionalFormattingCollection";
+import { createIndexerProxy } from "./IndexerProxy";
+import { HyperlinkCollection } from "./HyperlinkCollection";
+import { ListObjectCollection } from "./ListObjectCollection";
+import { PageSetup } from "./PageSetup";
+import { PictureCollection } from "./PictureCollection";
+import { ShapeCollection } from "./ShapeCollection";
+import { SheetVisibility } from "./Core/SheetVisibility";
+import { ValidationCollection } from "./ValidationCollection";
+import { VisibilityType } from "./enums";
+import { Workbook } from "./workbook";
+import { WorksheetModel } from "./Core/WorksheetModel";
+import { WorksheetProtection } from "./WorksheetProtection";
+
+/** Encapsulates a single worksheet and its supported worksheet features. */
+export class Worksheet {
+  private readonly workbook: Workbook;
+  private readonly model: WorksheetModel;
+  private readonly cells: Cells;
+  private readonly hyperlinks: HyperlinkCollection;
+  private readonly validations: ValidationCollection;
+  private readonly conditionalFormattings: ConditionalFormattingCollection;
+  private readonly pageSetup: PageSetup;
+  private readonly protection: WorksheetProtection;
+  private readonly autoFilter: AutoFilter;
+  private readonly listObjects: ListObjectCollection;
+  private readonly pictures: PictureCollection;
+  private readonly shapes: ShapeCollection;
+  private readonly charts: ChartCollection;
+  private readonly comments: CommentCollection;
+
+  public constructor(workbook: Workbook, model: WorksheetModel) {
+    this.workbook = workbook;
+    this.model = model;
+
+    const cells = new Cells(this);
+    this.cells = createIndexerProxy(cells, (key) =>
+      typeof key === "string" ? cells.getByName(key) : undefined,
+    );
+
+    const hyperlinks = new HyperlinkCollection(model.Hyperlinks);
+    this.hyperlinks = createIndexerProxy(hyperlinks, (key) =>
+      typeof key === "number" ? hyperlinks.get(key) : undefined,
+    );
+
+    const validations = new ValidationCollection(model.Validations);
+    this.validations = createIndexerProxy(validations, (key) =>
+      typeof key === "number" ? validations.get(key) : undefined,
+    );
+
+    const conditionalFormattings = new ConditionalFormattingCollection(model.ConditionalFormattings);
+    this.conditionalFormattings = createIndexerProxy(conditionalFormattings, (key) =>
+      typeof key === "number" ? conditionalFormattings.get(key) : undefined,
+    );
+
+    this.pageSetup = new PageSetup(model.PageSetup);
+    this.protection = new WorksheetProtection(model.Protection);
+    this.autoFilter = new AutoFilter(model.AutoFilter);
+
+    const listObjects = new ListObjectCollection(model.ListObjects);
+    this.listObjects = createIndexerProxy(listObjects, (key) => {
+      if (typeof key === "number") {
+        return listObjects.get(key);
+      }
+
+      return listObjects.getByName(key);
+    });
+
+    const pictures = new PictureCollection(model.Pictures);
+    this.pictures = createIndexerProxy(pictures, (key) =>
+      typeof key === "number" ? pictures.get(key) : undefined,
+    );
+
+    const shapes = new ShapeCollection(model.Shapes);
+    this.shapes = createIndexerProxy(shapes, (key) =>
+      typeof key === "number" ? shapes.get(key) : undefined,
+    );
+
+    const charts = new ChartCollection(model.Charts);
+    this.charts = createIndexerProxy(charts, (key) =>
+      typeof key === "number" ? charts.get(key) : undefined,
+    );
+
+    const comments = new CommentCollection(model.Comments);
+    this.comments = createIndexerProxy(comments, (key) =>
+      typeof key === "number" ? comments.get(key) : comments.get(key),
+    );
+  }
+
+  /** Gets the underlying core model. */
+  public get Model(): WorksheetModel {
+    return this.model;
+  }
+
+  /** Gets the owning workbook. */
+  public get Workbook(): Workbook {
+    return this.workbook;
+  }
+
+  /** Gets or sets the worksheet name. */
+  public get Name(): string {
+    return this.model.Name;
+  }
+
+  public set Name(value: string) {
+    if (value === null || value === undefined || value.trim().length === 0) {
+      throw new CellsException("Worksheet name must be non-empty.");
+    }
+
+    this.workbook.EnsureUniqueSheetName(value, this.model);
+    this.model.Name = value;
+  }
+
+  /** Gets or sets the worksheet visibility state. */
+  public get VisibilityType(): VisibilityType {
+    switch (this.model.Visibility) {
+      case SheetVisibility.Hidden:
+        return VisibilityType.Hidden;
+      case SheetVisibility.VeryHidden:
+        return VisibilityType.VeryHidden;
+      default:
+        return VisibilityType.Visible;
+    }
+  }
+
+  public set VisibilityType(value: VisibilityType) {
+    switch (value) {
+      case VisibilityType.Hidden:
+        this.model.Visibility = SheetVisibility.Hidden;
+        break;
+      case VisibilityType.VeryHidden:
+        this.model.Visibility = SheetVisibility.VeryHidden;
+        break;
+      default:
+        this.model.Visibility = SheetVisibility.Visible;
+        break;
+    }
+  }
+
+  /** Gets or sets the worksheet tab color. */
+  public get TabColor(): Color {
+    if (this.model.TabColor !== null && this.model.TabColor !== undefined) {
+      return Color.FromCore(this.model.TabColor);
+    }
+
+    return Color.Empty;
+  }
+
+  public set TabColor(value: Color) {
+    if (value === null || value === undefined || value.Equals(Color.Empty)) {
+      this.model.TabColor = null;
+      return;
+    }
+
+    this.model.TabColor = value.ToCore() as unknown as ColorValue;
+  }
+
+  /** Gets or sets whether gridlines are shown. */
+  public get ShowGridlines(): boolean {
+    return this.model.View.ShowGridLines;
+  }
+
+  public set ShowGridlines(value: boolean) {
+    this.model.View.ShowGridLines = value;
+  }
+
+  /** Gets or sets whether row and column headers are shown. */
+  public get ShowRowColumnHeaders(): boolean {
+    return this.model.View.ShowRowColumnHeaders;
+  }
+
+  public set ShowRowColumnHeaders(value: boolean) {
+    this.model.View.ShowRowColumnHeaders = value;
+  }
+
+  /** Gets or sets whether zero values are shown. */
+  public get ShowZeros(): boolean {
+    return this.model.View.ShowZeros;
+  }
+
+  public set ShowZeros(value: boolean) {
+    this.model.View.ShowZeros = value;
+  }
+
+  /** Gets or sets whether the worksheet view is right-to-left. */
+  public get RightToLeft(): boolean {
+    return this.model.View.RightToLeft;
+  }
+
+  public set RightToLeft(value: boolean) {
+    this.model.View.RightToLeft = value;
+  }
+
+  /** Gets or sets the worksheet zoom percentage. */
+  public get Zoom(): number {
+    return this.model.View.ZoomScale;
+  }
+
+  public set Zoom(value: number) {
+    if (value < 10 || value > 400) {
+      throw new CellsException("Zoom must be between 10 and 400.");
+    }
+
+    this.model.View.ZoomScale = value;
+  }
+
+  public get Cells(): Cells {
+    return this.cells;
+  }
+
+  public get Hyperlinks(): HyperlinkCollection {
+    return this.hyperlinks;
+  }
+
+  public get Validations(): ValidationCollection {
+    return this.validations;
+  }
+
+  public get ConditionalFormattings(): ConditionalFormattingCollection {
+    return this.conditionalFormattings;
+  }
+
+  public get PageSetup(): PageSetup {
+    return this.pageSetup;
+  }
+
+  public get Protection(): WorksheetProtection {
+    return this.protection;
+  }
+
+  public get AutoFilter(): AutoFilter {
+    return this.autoFilter;
+  }
+
+  public get ListObjects(): ListObjectCollection {
+    return this.listObjects;
+  }
+
+  public get Pictures(): PictureCollection {
+    return this.pictures;
+  }
+
+  public get Shapes(): ShapeCollection {
+    return this.shapes;
+  }
+
+  public get Charts(): ChartCollection {
+    return this.charts;
+  }
+
+  public get Comments(): CommentCollection {
+    return this.comments;
+  }
+
+  /** Marks the worksheet as protected using the current protection settings. */
+  public Protect(): void {
+    this.model.Protection.IsProtected = true;
+  }
+
+  /** Clears worksheet protection and resets supported protection flags. */
+  public Unprotect(): void {
+    this.protection.Reset();
   }
 }

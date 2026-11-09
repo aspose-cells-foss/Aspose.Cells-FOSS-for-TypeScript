@@ -1,5 +1,5 @@
 import {
-  Workbook,
+  LegacyWorkbook,
   HtmlDocument,
   workbookToHtml,
   worksheetToHtml,
@@ -8,7 +8,7 @@ import {
 export async function testHtmlExport() {
   console.log("Testing HTML export...");
 
-  const workbook = new Workbook();
+  const workbook = new LegacyWorkbook();
   const worksheet = workbook.worksheets[0]!;
 
   worksheet.putValue("A1", "Name");

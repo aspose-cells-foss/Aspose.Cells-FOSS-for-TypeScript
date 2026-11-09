@@ -1,8 +1,8 @@
-import type { Worksheet } from "../index";
+import type { LegacyWorksheet } from "../index";
 import type { ImageInfo, ShapeInfo, Style } from "../types";
 
 /**
- * Data extracted from a TypeScript Worksheet for the rendering pipeline.
+ * Data extracted from a TypeScript LegacyWorksheet for the rendering pipeline.
  * This is the bridge between the existing TS data model and the .NET Core model concepts.
  */
 export interface ExtractedCell {
@@ -59,7 +59,7 @@ export interface ExtractedWorksheetData {
 
 /** Extracts worksheet data into a flat structure consumable by rendering. */
 export class WorksheetDataExtractor {
-  static extract(worksheet: Worksheet): ExtractedWorksheetData {
+  static extract(worksheet: LegacyWorksheet): ExtractedWorksheetData {
     const cells = new Map<string, ExtractedCell>();
     let minRow = Infinity, maxRow = -1;
     let minCol = Infinity, maxCol = -1;

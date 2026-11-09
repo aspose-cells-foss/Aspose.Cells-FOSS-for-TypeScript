@@ -1,4 +1,4 @@
-import type { Workbook, Worksheet } from "../index";
+import type { LegacyWorkbook, LegacyWorksheet } from "../index";
 import { RenderContext } from "./RenderContext";
 import { SheetLayout } from "./SheetLayout";
 import { Paginator } from "./Paginator";
@@ -16,7 +16,7 @@ import { SheetPdfRenderer } from "./SheetPdfRenderer";
  */
 export class WorkbookPdfExporter {
   static async export(
-    workbook: Workbook,
+    workbook: LegacyWorkbook,
     outputPath: string,
     options?: PdfSaveOptions,
   ): Promise<void> {
@@ -78,7 +78,7 @@ export class WorkbookPdfExporter {
   }
 
   private static buildPages(
-    workbook: Workbook,
+    workbook: LegacyWorkbook,
     context: RenderContext,
     options: PdfSaveOptions,
   ): PageLayout[] {
@@ -106,7 +106,7 @@ export class WorkbookPdfExporter {
     return pages;
   }
 
-  private static extractPageSetup(_sheet: Worksheet) {
+  private static extractPageSetup(_sheet: LegacyWorksheet) {
     // Defaults must match what the HTML/XLSX writers emit for this codebase:
     // <pageSetup orientation="portrait" paperSize="1"/> and
     // <pageMargins left="0.75" right="0.75" top="1" bottom="1" header="0.5" footer="0.5"/>

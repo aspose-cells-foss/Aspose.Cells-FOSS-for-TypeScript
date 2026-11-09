@@ -1,11 +1,11 @@
-import { Workbook, Style } from "../aspose_cells";
+import { LegacyWorkbook, LegacyStyle } from "../aspose_cells";
 
 export async function testFontSettings() {
   console.log("Testing font settings...");
 
-  const workbook = new Workbook();
+  const workbook = new LegacyWorkbook();
   const worksheet = workbook.worksheets[0]!;
-  const style = new Style();
+  const style = new LegacyStyle();
 
   style.setFontName("Arial");
   style.setFontSize(14);
@@ -24,15 +24,15 @@ export async function testFontSettings() {
 export async function testFillSettings() {
   console.log("Testing fill settings...");
 
-  const workbook = new Workbook();
+  const workbook = new LegacyWorkbook();
   const worksheet = workbook.worksheets[0]!;
-  const style = new Style();
+  const style = new LegacyStyle();
 
   style.setForegroundColor("FFFF00");
   style.setBackgroundColor("FF0000");
 
   const cell = worksheet.getCell2("A1");
-  cell.putValue("Colored Cell");
+  cell.putValue("Colored LegacyCell");
   cell.setStyle(style);
 
   await workbook.save("outputfiles/test_fill_settings.xlsx");
@@ -42,9 +42,9 @@ export async function testFillSettings() {
 export async function testBorderSettings() {
   console.log("Testing border settings...");
 
-  const workbook = new Workbook();
+  const workbook = new LegacyWorkbook();
   const worksheet = workbook.worksheets[0]!;
-  const style = new Style();
+  const style = new LegacyStyle();
 
   style.getBorder().left = { style: "thick", color: "FF0000" };
   style.getBorder().right = { style: "thick", color: "FF0000" };
@@ -52,7 +52,7 @@ export async function testBorderSettings() {
   style.getBorder().bottom = { style: "thick", color: "FF0000" };
 
   const cell = worksheet.getCell2("A1");
-  cell.putValue("Bordered Cell");
+  cell.putValue("Bordered LegacyCell");
   cell.setStyle(style);
 
   await workbook.save("outputfiles/test_border_settings.xlsx");
@@ -62,9 +62,9 @@ export async function testBorderSettings() {
 export async function testAlignment() {
   console.log("Testing alignment...");
 
-  const workbook = new Workbook();
+  const workbook = new LegacyWorkbook();
   const worksheet = workbook.worksheets[0]!;
-  const style = new Style();
+  const style = new LegacyStyle();
 
   style.setHorizontalAlignment("center");
   style.setVerticalAlignment("center");

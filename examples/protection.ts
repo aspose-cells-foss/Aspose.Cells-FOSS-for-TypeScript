@@ -1,20 +1,20 @@
-import { Workbook, Style } from "../aspose_cells";
+import { LegacyWorkbook, LegacyStyle } from "../aspose_cells";
 
 export async function testCellProtection() {
   console.log("Testing cell protection...");
 
-  const workbook = new Workbook();
+  const workbook = new LegacyWorkbook();
   const worksheet = workbook.worksheets[0]!;
 
-  const style = new Style();
+  const style = new LegacyStyle();
   style.setLocked(true);
   style.setHidden(false);
 
   const cell = worksheet.getCell2("A1");
-  cell.putValue("Protected Cell");
+  cell.putValue("Protected LegacyCell");
   cell.setStyle(style);
 
-  worksheet.putValue("A2", "Unprotected Cell");
+  worksheet.putValue("A2", "Unprotected LegacyCell");
 
   await workbook.save("outputfiles/test_cell_protection.xlsx");
   console.log("Saved to outputfiles/test_cell_protection.xlsx");
@@ -23,7 +23,7 @@ export async function testCellProtection() {
 export async function testWorkbookProtection() {
   console.log("Testing workbook protection...");
 
-  const workbook = new Workbook();
+  const workbook = new LegacyWorkbook();
   workbook.protect(true, "password");
 
   await workbook.save("outputfiles/test_workbook_protection.xlsx");
