@@ -242,7 +242,7 @@ export class LegacyWorksheet {
         if (currentWidth !== prevWidth || i === sortedCols.length) {
           const minCol = sortedCols[groupStart][0] + 1;
           const maxCol = sortedCols[i - 1][0] + 1;
-          const excelWidth = Math.round((prevWidth / 7) * 100) / 100;
+          const excelWidth = Math.round(prevWidth * 100) / 100;
           
           if (minCol === maxCol) {
             cols.push(`<col min="${minCol}" max="${maxCol}" width="${excelWidth}" customWidth="1"/>`);
