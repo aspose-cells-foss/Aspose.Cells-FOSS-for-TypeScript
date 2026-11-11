@@ -3,6 +3,10 @@ import { ChartType } from "../ChartType";
 export class ChartModel {
   public Name: string = "";
   public ChartType: ChartType = ChartType.Unknown;
+  /** Cell range formula used by the chart series (e.g. "Sheet1!$B$1:$B$5"). */
+  public DataRange: string = "";
+  /** Series entries detected in the chart definition. */
+  public readonly Series: ChartSeriesModel[] = [];
   public UpperLeftRow: number = 0;
   public UpperLeftColumn: number = 0;
   public UpperLeftRowOffset: number = 0;
@@ -18,6 +22,16 @@ export class ChartModel {
   public OriginalRId: string | null = null;
   public IsChartEx: boolean = false;
   public readonly CompanionFiles: ChartCompanionFile[] = [];
+}
+
+/** Series entry detected in a chart definition file. */
+export class ChartSeriesModel {
+  public Index: number = 0;
+  public Order: number = 0;
+  /** Value range formula of the series (c:val/c:numRef/c:f). */
+  public ValuesFormula: string = "";
+  /** Category range formula of the series (c:cat), when present. */
+  public CategoriesFormula: string = "";
 }
 
 export class ChartCompanionFile {

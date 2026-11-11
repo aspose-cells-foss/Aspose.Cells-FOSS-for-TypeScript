@@ -911,7 +911,11 @@ function renameDomElement(element: Element, namespaceUri: string, localName: str
   }
 
   const rootNode = ownerDocument.documentElement as Element | null;
-  const prefix = rootNode !== null ? rootNode.lookupPrefix(namespaceUri) : null;
+  let prefix = rootNode !== null ? rootNode.lookupPrefix(namespaceUri) : null;
+  if (prefix === null || prefix.length === 0) {
+    prefix = preferredNamespacePrefix(namespaceUri);
+  }
+
   const qualifiedName = prefix !== null && prefix.length > 0 ? `${prefix}:${localName}` : localName;
   const replacement = ownerDocument.createElementNS(namespaceUri, qualifiedName);
 
@@ -939,6 +943,20 @@ function renameDomElement(element: Element, namespaceUri: string, localName: str
 function localNameOf(nodeName: string): string {
   const separator = nodeName.indexOf(":");
   return separator >= 0 ? nodeName.substring(separator + 1) : nodeName;
+}
+
+/** Returns the conventional OOXML prefix for a namespace when none is in scope. */
+function preferredNamespacePrefix(namespaceUri: string): string | null {
+  switch (namespaceUri) {
+    case DRAWING_MAIN_NAMESPACE:
+      return "a";
+    case XDR_NAMESPACE:
+      return "xdr";
+    case RELATIONSHIP_NS:
+      return "r";
+    default:
+      return null;
+  }
 }
 
 function tryNormalizeGuid(value: string): string | null {

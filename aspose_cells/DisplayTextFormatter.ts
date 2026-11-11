@@ -1,13 +1,21 @@
 import { DateSerialConverter } from "./Core/DateSerialConverter";
 import { DateSystem } from "./Core/DateSystem";
 import { StyleValue } from "./Core/StyleValue";
+import { DisplayTextCulture } from "./DisplayTextCulture";
+import { DisplayTextDateFormatSupport } from "./DisplayTextDateFormatSupport";
+import { DisplayTextFormatterSupport } from "./DisplayTextFormatterSupport";
+import { DisplayTextLocaleSupport } from "./DisplayTextLocaleSupport";
 import { NumberFormat } from "./NumberFormat";
 
 /**
- * Simple port of DisplayTextFormatter.
+ * Produces the raw and display strings for logical cell values.
  *
- * FormatStringValue returns the stable raw representation of a logical cell value.
- * FormatDisplayValue applies the style number format for the supported scalar kinds.
+ * FormatStringValue returns the stable raw representation of a logical cell
+ * value. FormatDisplayValue applies the style number format, locale directives,
+ * workbook culture, and date system.
+ *
+ * Ported from Aspose.Cells_FOSS.DisplayTextFormatter. JavaScript Date values
+ * are treated as wall-clock values, matching .NET DateTime semantics.
  */
 export class DisplayText {
   /** Returns the invariant raw text for a cell value. */
@@ -39,49 +47,189 @@ export class DisplayText {
   public static FormatDisplayValue(
     value: unknown,
     style: StyleValue,
-    _culture: { Name: string } | null,
+    culture: { Name: string } | null,
     dateSystem: DateSystem,
   ): string {
     if (value === null || value === undefined) {
       return "";
     }
 
+    const cultureName = DisplayTextCulture.NormalizeName(culture === null ? "" : culture.Name);
+
     if (typeof value === "string") {
-      return value;
+      return DisplayText.formatTextValue(value, style);
     }
 
     if (typeof value === "boolean") {
       return value ? "TRUE" : "FALSE";
     }
 
-    const formatCode = NumberFormat.ResolveFormatCode(style.NumberFormat.Number, style.NumberFormat.Custom);
-
     if (value instanceof Date) {
-      if (!formatCode || formatCode === "General") {
-        return DisplayText.formatRawDateTime(value);
-      }
-
-      return DisplayText.formatNumeric(DateSerialConverter.ToSerial(value, dateSystem), formatCode);
+      return DisplayText.formatDateTimeValue(value, style, cultureName, dateSystem);
     }
 
     if (typeof value === "number") {
-      if (!formatCode || formatCode === "General") {
-        return DisplayText.formatGeneral(value);
-      }
-
-      return DisplayText.formatNumeric(value, formatCode);
+      return DisplayText.formatNumericValue(value, style, cultureName);
     }
 
     return String(value);
   }
 
-  private static formatGeneral(value: number): string {
-    if (!Number.isFinite(value)) {
-      return String(value);
+  private static formatTextValue(value: string, style: StyleValue): string {
+    const formatCode = NumberFormat.ResolveFormatCode(style.NumberFormat.Number, style.NumberFormat.Custom);
+    if (formatCode.trim().length === 0 || formatCode === "General") {
+      return value;
     }
 
-    // Excel's General format rounds to 15 significant digits.
+    // Excel text formats can have a dedicated fourth section; only that section
+    // should shape the displayed text without mutating the underlying value.
+    const sections = DisplayTextFormatterSupport.ParseSections(formatCode);
+    const textSection = DisplayTextFormatterSupport.SelectTextSection(sections);
+    if (textSection === null) {
+      return value;
+    }
+
+    const pattern = DisplayTextFormatterSupport.StripDirectiveBrackets(textSection.Raw, false);
+    const formatted = DisplayTextFormatterSupport.ExpandSectionPattern(pattern, value, true);
+    if (formatted.length === 0) {
+      return value;
+    }
+
+    return formatted;
+  }
+
+  private static formatNumericValue(value: number, style: StyleValue, cultureName: string): string {
+    const formatCode = NumberFormat.ResolveFormatCode(style.NumberFormat.Number, style.NumberFormat.Custom);
+    if (formatCode.trim().length === 0 || formatCode === "General") {
+      return DisplayText.formatGeneralDouble(value);
+    }
+
+    // Numeric formats can split positive, negative, zero, and text behavior into
+    // separate sections, so the display path first selects the matching section.
+    const sections = DisplayTextFormatterSupport.ParseSections(formatCode);
+    if (sections.length === 0) {
+      return DisplayText.FormatStringValue(value);
+    }
+
+    const selection = DisplayTextFormatterSupport.SelectNumericSection(sections, value);
+    const selectedSection = selection.Section;
+    if (selectedSection === null || selectedSection.Raw.trim().length === 0) {
+      return DisplayText.FormatStringValue(value);
+    }
+
+    // Fraction placeholders are not directly compatible with custom numeric
+    // format strings, so they are handled separately before standard formatting.
+    const fractionResult = DisplayTextFormatterSupport.TryFormatFraction(
+      value,
+      selectedSection.Raw,
+      selection.UseAbsoluteValue,
+    );
+    if (fractionResult !== null) {
+      return fractionResult;
+    }
+
+    const localized = DisplayTextLocaleSupport.ApplyLocaleDirectives(selectedSection.Raw, cultureName);
+    const sanitizedSection = DisplayTextFormatterSupport.SanitizeNumericSection(localized.Section);
+    if (sanitizedSection.trim().length === 0) {
+      return DisplayText.FormatStringValue(value);
+    }
+
+    if (!DisplayTextFormatterSupport.ContainsNumericPlaceholder(sanitizedSection)) {
+      const literal = DisplayTextFormatterSupport.ExpandSectionPattern(sanitizedSection, "", false);
+      if (literal.length > 0) {
+        return literal;
+      }
+
+      return DisplayText.FormatStringValue(value);
+    }
+
+    let formattedValue = value;
+    if (selection.UseAbsoluteValue && value < 0) {
+      formattedValue = Math.abs(value);
+    }
+
+    try {
+      return DisplayTextFormatterSupport.FormatNumber(formattedValue, sanitizedSection, localized.Culture);
+    } catch {
+      return DisplayText.FormatStringValue(value);
+    }
+  }
+
+  private static formatGeneralDouble(value: number): string {
+    if (!Number.isFinite(value)) {
+      return DisplayText.FormatStringValue(value);
+    }
+
+    // Excel's General format rounds to 15 significant digits, which collapses
+    // binary artifacts such as 1499.9899999999998 back to 1499.99.
     return Number(value.toPrecision(15)).toString();
+  }
+
+  private static formatDateTimeValue(
+    value: Date,
+    style: StyleValue,
+    cultureName: string,
+    dateSystem: DateSystem,
+  ): string {
+    const custom = style.NumberFormat.Custom;
+    if (
+      (custom === null || custom.length === 0) &&
+      (style.NumberFormat.Number === 14 || style.NumberFormat.Number === 22) &&
+      cultureName.length > 0
+    ) {
+      const pattern =
+        style.NumberFormat.Number === 22
+          ? DisplayTextCulture.GetShortDatePattern(cultureName) +
+            " " +
+            DisplayTextCulture.GetShortTimePattern(cultureName)
+          : DisplayTextCulture.GetShortDatePattern(cultureName);
+      return DisplayTextDateFormatSupport.FormatDateTimeValue(value, pattern, cultureName);
+    }
+
+    const formatCode = NumberFormat.ResolveFormatCode(style.NumberFormat.Number, style.NumberFormat.Custom);
+    if (formatCode.trim().length === 0 || formatCode === "General") {
+      return DisplayText.formatRawDateTime(value);
+    }
+
+    // Date/time display uses the first section that still carries date tokens
+    // after locale and directive cleanup.
+    const sections = DisplayTextFormatterSupport.ParseSections(formatCode);
+    const section = DisplayTextFormatterSupport.SelectDateTimeSection(sections);
+    if (section === null || section.Raw.trim().length === 0) {
+      return DisplayText.formatRawDateTime(value);
+    }
+
+    const localized = DisplayTextLocaleSupport.ApplyLocaleDirectives(section.Raw, cultureName);
+    let sectionCulture = localized.Culture;
+    const sectionFormat = DisplayTextFormatterSupport.StripDirectiveBrackets(localized.Section, true);
+
+    // Elapsed-time formats are duration-style output, not calendar rendering.
+    if (DisplayTextDateFormatSupport.ContainsElapsedTimeToken(sectionFormat)) {
+      const serial = DateSerialConverter.ToWallClockSerial(value, dateSystem);
+      return DisplayTextDateFormatSupport.FormatElapsedTimeValue(
+        Math.round(serial * 86400000),
+        sectionFormat,
+        sectionCulture,
+      );
+    }
+
+    if (sectionFormat.trim().length === 0) {
+      return DisplayText.formatRawDateTime(value);
+    }
+
+    if (
+      DisplayTextDateFormatSupport.ContainsTextualMonthToken(sectionFormat) &&
+      !DisplayTextLocaleSupport.ContainsLocaleDirective(section.Raw) &&
+      DisplayTextCulture.UsesEnglishMonthFallback(sectionCulture)
+    ) {
+      sectionCulture = "";
+    }
+
+    try {
+      return DisplayTextDateFormatSupport.FormatDateTimeValue(value, sectionFormat, sectionCulture);
+    } catch {
+      return DisplayText.formatRawDateTime(value);
+    }
   }
 
   private static formatRawDateTime(value: Date): string {
@@ -99,142 +247,5 @@ export class DisplayText {
 
   private static pad(value: number): string {
     return value < 10 ? `0${value}` : String(value);
-  }
-
-  private static formatNumeric(value: number, formatCode: string): string {
-    const sections = DisplayText.splitSections(formatCode);
-    const section = DisplayText.selectSection(sections, value);
-    if (section === null) {
-      return DisplayText.formatGeneral(value);
-    }
-
-    const isNegativeSection = value < 0 && sections.length > 1 && section === sections[1];
-    const numeric = isNegativeSection ? Math.abs(value) : value;
-
-    let percentCount = 0;
-    for (const character of section) {
-      if (character === "%") {
-        percentCount++;
-      }
-    }
-
-    const plain = section
-      .replace(/\[[^\]]*\]/g, "")
-      .replace(/"[^"]*"/g, "")
-      .replace(/[\\_*]./g, "");
-
-    const hasPlaceholder = /[0#?]/.test(plain);
-    if (!hasPlaceholder) {
-      const literal = section.replace(/\[[^\]]*\]/g, "").replace(/"/g, "").trim();
-      return literal.length > 0 ? literal : DisplayText.formatGeneral(value);
-    }
-
-    const dotIndex = plain.indexOf(".");
-    let decimals = 0;
-    if (dotIndex >= 0) {
-      for (let index = dotIndex + 1; index < plain.length; index++) {
-        const character = plain[index];
-        if (character === "0" || character === "#") {
-          decimals++;
-        } else {
-          break;
-        }
-      }
-    }
-
-    const useGrouping = plain.indexOf(",") >= 0;
-    let scaled = numeric * Math.pow(100, percentCount);
-    let text = Math.abs(scaled).toFixed(decimals);
-
-    if (decimals > 0 && DisplayText.hasOptionalOnlyDecimals(plain)) {
-      text = text.replace(/0+$/, "").replace(/\.$/, "");
-    }
-
-    if (useGrouping) {
-      text = DisplayText.addGrouping(text);
-    }
-
-    if (isNegativeSection) {
-      return section.indexOf("(") >= 0 ? `(${text})` : `-${text}`;
-    }
-
-    return scaled < 0 ? `-${text}` : text;
-  }
-
-  private static hasOptionalOnlyDecimals(plain: string): boolean {
-    const dotIndex = plain.indexOf(".");
-    if (dotIndex < 0) {
-      return false;
-    }
-
-    let hasZero = false;
-    for (let index = dotIndex + 1; index < plain.length; index++) {
-      const character = plain[index];
-      if (character === "0") {
-        hasZero = true;
-        break;
-      }
-      if (character !== "#" && character !== " ") {
-        break;
-      }
-    }
-
-    return !hasZero;
-  }
-
-  private static addGrouping(text: string): string {
-    const parts = text.split(".");
-    const integer = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-    return parts.length > 1 ? `${integer}.${parts[1]}` : integer;
-  }
-
-  private static splitSections(formatCode: string): string[] {
-    const sections: string[] = [];
-    let current = "";
-    let inQuote = false;
-
-    for (let index = 0; index < formatCode.length; index++) {
-      const character = formatCode[index];
-      if (character === '"') {
-        inQuote = !inQuote;
-        current += character;
-        continue;
-      }
-
-      if (!inQuote && character === ";") {
-        sections.push(current);
-        current = "";
-        continue;
-      }
-
-      current += character;
-    }
-
-    sections.push(current);
-    return sections;
-  }
-
-  private static selectSection(sections: string[], value: number): string | null {
-    if (sections.length === 0) {
-      return null;
-    }
-
-    if (sections.length === 1) {
-      return sections[0];
-    }
-
-    if (sections.length === 2) {
-      return value < 0 ? sections[1] : sections[0];
-    }
-
-    if (value > 0) {
-      return sections[0];
-    }
-
-    if (value < 0) {
-      return sections[1];
-    }
-
-    return sections[2];
   }
 }

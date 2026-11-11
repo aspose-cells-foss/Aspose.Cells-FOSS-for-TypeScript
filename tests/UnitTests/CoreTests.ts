@@ -58,7 +58,7 @@ export function putValueOverloadsAssignExpectedTypes(): void {
 export function stringValueFormatsSupportedScalarTypes(): void {
   const workbook = new Workbook();
   const sheet = workbook.Worksheets[0];
-  const timestamp = new Date(Date.UTC(2024, 5, 6, 7, 8, 9));
+  const timestamp = new Date(2024, 4, 6, 7, 8, 9);
 
   sheet.Cells["A1"].PutValue(true);
   sheet.Cells["B1"].PutValue(123);
@@ -71,7 +71,7 @@ export function stringValueFormatsSupportedScalarTypes(): void {
   AssertEx.equal("123", sheet.Cells["B1"].DisplayStringValue);
   AssertEx.equal("12.5", sheet.Cells["C1"].StringValue);
   AssertEx.equal("12.5", sheet.Cells["C1"].DisplayStringValue);
-  const expectedDateText = invariantMonthDayYearTime(timestamp, true);
+  const expectedDateText = invariantMonthDayYearTime(timestamp, false);
   AssertEx.equal(expectedDateText, sheet.Cells["D1"].StringValue);
   AssertEx.equal(expectedDateText, sheet.Cells["D1"].DisplayStringValue);
 }
@@ -181,7 +181,7 @@ export function displayStringValueAppliesNumericFormatsAndStringValueStaysRaw():
 export function displayStringValueAppliesDateAndTextFormats(): void {
   const workbook = new Workbook();
   const sheet = workbook.Worksheets[0];
-  const timestamp = new Date(2024, 5, 6, 7, 8, 9);
+  const timestamp = new Date(2024, 4, 6, 7, 8, 9);
 
   const builtInDate = sheet.Cells["A2"];
   builtInDate.PutValue(timestamp);

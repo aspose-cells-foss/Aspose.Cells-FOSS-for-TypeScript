@@ -123,12 +123,18 @@ export class Hyperlink {
   public constructor(
     private readonly model: HyperlinkModel,
     onDelete?: (model: HyperlinkModel) => void,
+    private readonly owner?: HyperlinkModel[],
   ) {
     this.onDelete = onDelete;
   }
 
   public get Model(): HyperlinkModel {
     return this.model;
+  }
+
+  /** Mirrors Hyperlink.BelongsTo: the facade's backing collection identity. */
+  public BelongsTo(owner: HyperlinkModel[]): boolean {
+    return this.owner === owner;
   }
 
   public get Address(): string {

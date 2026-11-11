@@ -5,6 +5,24 @@ import * as path from "path";
 import * as os from "os";
 
 /**
+ * Signals that a test cannot run because a required prerequisite (usually a
+ * fixture file) is unavailable. The runner reports it as SKIP, not FAIL.
+ */
+export class SkipTestError extends Error {
+  constructor(public readonly reason: string) {
+    super(reason);
+    this.name = "SkipTestError";
+    // Restore the prototype chain for ES5-style transpilation targets.
+    Object.setPrototypeOf(this, SkipTestError.prototype);
+  }
+}
+
+/** Aborts the current test and reports a SKIP with the supplied reason. */
+export function skipTest(reason: string): never {
+  throw new SkipTestError(reason);
+}
+
+/**
  * A single named test case, mirroring Aspose.Cells_FOSS.Testing.TestCase.
  */
 export class TestCase {
@@ -34,19 +52,30 @@ export class TestRunner {
 
     console.log(`Running ${suiteName} (${selected.length} tests)`);
     let failed = 0;
+    let skipped = 0;
 
     for (const test of selected) {
       try {
         test.body();
         console.log(`PASS ${test.name}`);
       } catch (exception) {
+        if (exception instanceof SkipTestError) {
+          skipped++;
+          console.log(`SKIP ${test.name}: ${exception.reason}`);
+          continue;
+        }
+
         failed++;
         console.log(`FAIL ${test.name}`);
         console.log(exception instanceof Error ? exception.stack : String(exception));
       }
     }
 
-    console.log(`${suiteName}: ${selected.length - failed} passed, ${failed} failed`);
+    const passed = selected.length - failed - skipped;
+    const summary = skipped > 0
+      ? `${suiteName}: ${passed} passed, ${failed} failed, ${skipped} skipped`
+      : `${suiteName}: ${passed} passed, ${failed} failed`;
+    console.log(summary);
     return failed === 0 ? 0 : 1;
   }
 

@@ -9,22 +9,27 @@ export class HyperlinkCollection {
   [key: string]: any;
 
   private readonly models: HyperlinkModel[];
+  private capacity: number;
 
   public constructor(models: HyperlinkModel[]) {
     this.models = models;
+    this.capacity = models.length;
   }
 
   public get Count(): number {
     return this.models.length;
   }
 
-  /** Aspose compatibility: capacity mirrors Count because the collection is backed by an array. */
   public get Capacity(): number {
-    return this.models.length;
+    return Math.max(this.capacity, this.models.length);
   }
 
-  public set Capacity(_value: number) {
-    // Retained for Aspose-compatible API shape.
+  public set Capacity(value: number) {
+    if (value < this.models.length) {
+      throw new CellsException("Capacity cannot be less than Count.");
+    }
+
+    this.capacity = value;
   }
 
   public get(index: number): Hyperlink {
@@ -32,7 +37,37 @@ export class HyperlinkCollection {
       throw new CellsException("Hyperlink index was out of range.");
     }
 
-    return new Hyperlink(this.models[index], (model) => this.removeModel(model));
+    return new Hyperlink(this.models[index], (model) => this.removeModel(model), this.models);
+  }
+
+  /**
+   * Replaces the hyperlink at the given index, mirroring the C# indexer setter.
+   */
+  public Set(index: number, value: Hyperlink | null | undefined): void {
+    if (index < 0 || index >= this.models.length) {
+      throw new CellsException("Hyperlink index was out of range.");
+    }
+
+    if (value === null || value === undefined) {
+      throw new CellsException("Hyperlink value cannot be null.");
+    }
+
+    if (!value.BelongsTo(this.models)) {
+      throw new CellsException("Assigned hyperlink must belong to the same worksheet hyperlink collection.");
+    }
+
+    const replacement = cloneModel(value.Model);
+    for (let current = 0; current < this.models.length; current++) {
+      if (current === index) {
+        continue;
+      }
+
+      if (overlaps(this.models[current], replacement)) {
+        throw new CellsException("Hyperlink ranges must not overlap.");
+      }
+    }
+
+    this.models[index] = replacement;
   }
 
   public at(index: number): Hyperlink {
@@ -192,6 +227,19 @@ function assignAddress(model: HyperlinkModel, address: string): void {
 
   model.Address = normalized;
   model.SubAddress = null;
+}
+
+function cloneModel(source: HyperlinkModel): HyperlinkModel {
+  const target = new HyperlinkModel();
+  target.FirstRow = source.FirstRow;
+  target.FirstColumn = source.FirstColumn;
+  target.TotalRows = source.TotalRows;
+  target.TotalColumns = source.TotalColumns;
+  target.Address = source.Address;
+  target.SubAddress = source.SubAddress;
+  target.TextToDisplay = source.TextToDisplay;
+  target.ScreenTip = source.ScreenTip;
+  return target;
 }
 
 function overlaps(left: HyperlinkModel, right: HyperlinkModel): boolean {

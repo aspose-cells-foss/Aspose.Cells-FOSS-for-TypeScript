@@ -190,11 +190,15 @@ import { CellArea } from "./CellArea";
 import { toApiCellArea } from "./CellAreaConvert";
 import { ValidationAlertType, ValidationType, OperatorType } from "./enums";
 import { ValidationModel } from "./Core/ValidationModel";
+import { ValidationCollection } from "./ValidationCollection";
 
 // Implemented by serializer module.
 /** Represents a data validation rule. */
 export class Validation {
-  public constructor(private readonly model: ValidationModel) {}
+  public constructor(
+    private readonly owner: ValidationModel[],
+    private readonly model: ValidationModel,
+  ) {}
 
   public get Model(): ValidationModel {
     return this.model;
@@ -233,7 +237,7 @@ export class Validation {
   }
 
   public set Formula1(value: string) {
-    this.model.Formula1 = value ?? "";
+    this.model.Formula1 = Validation.normalizeFormula(value);
   }
 
   public get Formula2(): string {
@@ -241,7 +245,7 @@ export class Validation {
   }
 
   public set Formula2(value: string) {
-    this.model.Formula2 = value ?? "";
+    this.model.Formula2 = Validation.normalizeFormula(value);
   }
 
   public get IgnoreBlank(): boolean {
@@ -265,7 +269,7 @@ export class Validation {
   }
 
   public set InputTitle(value: string) {
-    this.model.InputTitle = value ?? "";
+    this.model.InputTitle = Validation.normalizeText(value);
   }
 
   public get InputMessage(): string {
@@ -273,7 +277,7 @@ export class Validation {
   }
 
   public set InputMessage(value: string) {
-    this.model.InputMessage = value ?? "";
+    this.model.InputMessage = Validation.normalizeText(value);
   }
 
   public get ErrorTitle(): string {
@@ -281,7 +285,7 @@ export class Validation {
   }
 
   public set ErrorTitle(value: string) {
-    this.model.ErrorTitle = value ?? "";
+    this.model.ErrorTitle = Validation.normalizeText(value);
   }
 
   public get ErrorMessage(): string {
@@ -289,7 +293,7 @@ export class Validation {
   }
 
   public set ErrorMessage(value: string) {
-    this.model.ErrorMessage = value ?? "";
+    this.model.ErrorMessage = Validation.normalizeText(value);
   }
 
   public get ShowInput(): boolean {
@@ -309,22 +313,27 @@ export class Validation {
   }
 
   public AddArea(area: CellArea): void {
-    this.model.Areas.push(
-      new CellArea(area.FirstRow, area.FirstColumn, area.TotalRows, area.TotalColumns),
-    );
+    ValidationCollection.AddAreaToValidation(this.owner, this.model, area);
   }
 
   public RemoveArea(area: CellArea): void {
-    for (let index = this.model.Areas.length - 1; index >= 0; index--) {
-      const current = this.model.Areas[index];
-      if (
-        current.StartRow <= area.EndRow &&
-        current.EndRow >= area.StartRow &&
-        current.StartColumn <= area.EndColumn &&
-        current.EndColumn >= area.StartColumn
-      ) {
-        this.model.Areas.splice(index, 1);
-      }
+    ValidationCollection.RemoveAreaFromValidation(this.owner, this.model, area);
+  }
+
+  private static normalizeFormula(value: string | null | undefined): string | null {
+    if (value === null || value === undefined) {
+      return null;
     }
+
+    const trimmed = value.trim();
+    if (trimmed.length === 0) {
+      return null;
+    }
+
+    return trimmed.startsWith("=") ? trimmed.substring(1) : trimmed;
+  }
+
+  private static normalizeText(value: string | null | undefined): string | null {
+    return value === null || value === undefined || value.length === 0 ? null : value;
   }
 }

@@ -1,3 +1,4 @@
+import { CellsException } from "./CellsException";
 import { ImageType } from "./enums";
 import { PictureModel } from "./Core/PictureModel";
 
@@ -23,6 +24,10 @@ export class Picture {
   }
 
   public set UpperLeftRow(value: number) {
+    if (value < 0) {
+      throw new CellsException("UpperLeftRow must be non-negative.");
+    }
+
     this.model.UpperLeftRow = value;
   }
 
@@ -31,6 +36,10 @@ export class Picture {
   }
 
   public set UpperLeftColumn(value: number) {
+    if (value < 0) {
+      throw new CellsException("UpperLeftColumn must be non-negative.");
+    }
+
     this.model.UpperLeftColumn = value;
   }
 
@@ -70,7 +79,40 @@ export class Picture {
     return this.model.ImageData;
   }
 
+  public set Data(value: Uint8Array) {
+    if (value === null || value === undefined || value.length === 0) {
+      throw new CellsException("Picture data must be non-null and non-empty.");
+    }
+
+    this.model.ImageData = value;
+    this.model.ImageExtension = Picture.detectExtension(value);
+  }
+
   public get ImageData(): Uint8Array {
     return this.model.ImageData;
+  }
+
+  private static detectExtension(data: Uint8Array): string {
+    if (data.length < 4) {
+      return "bin";
+    }
+
+    if (data[0] === 0xff && data[1] === 0xd8) {
+      return "jpeg";
+    }
+
+    if (data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4e && data[3] === 0x47) {
+      return "png";
+    }
+
+    if (data[0] === 0x47 && data[1] === 0x49 && data[2] === 0x46) {
+      return "gif";
+    }
+
+    if (data[0] === 0x42 && data[1] === 0x4d) {
+      return "bmp";
+    }
+
+    return "bin";
   }
 }

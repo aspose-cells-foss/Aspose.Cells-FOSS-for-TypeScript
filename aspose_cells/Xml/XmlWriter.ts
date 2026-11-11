@@ -10,13 +10,26 @@ export class XmlElement {
   private readonly _attributes: Array<[string, string]> = [];
   private readonly _children: Array<XmlElement | string> = [];
   private readonly _attributeNames = new Set<string>();
+  private readonly _spacedSelfClosing: boolean;
 
-  private constructor(name: string) {
+  private constructor(name: string, spacedSelfClosing = false) {
     this.name = name;
+    this._spacedSelfClosing = spacedSelfClosing;
   }
 
   static create(name: string): XmlElement {
     return new XmlElement(name);
+  }
+
+  /**
+   * Creates an element whose empty form is serialized as `<name ... />`.
+   *
+   * Only the autoFilter writer opts in: its emitted markup is asserted against
+   * the System.Xml.Linq output in golden tests. Every other XML part keeps the
+   * default `<name .../>` form, so this factory cannot change unrelated output.
+   */
+  static createWithSpacedSelfClosing(name: string): XmlElement {
+    return new XmlElement(name, true);
   }
 
   /**
@@ -98,7 +111,7 @@ export class XmlElement {
     }
 
     if (this._children.length === 0) {
-      return `<${this.name}${attributes}/>`;
+      return this._spacedSelfClosing ? `<${this.name}${attributes} />` : `<${this.name}${attributes}/>`;
     }
 
     let inner = "";

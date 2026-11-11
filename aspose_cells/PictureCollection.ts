@@ -71,6 +71,10 @@ export class PictureCollection {
           ? source
           : new Uint8Array(source.toBuffer());
 
+    if (data.length === 0) {
+      throw new CellsException("Image data must be non-null and non-empty.");
+    }
+
     const model = new PictureModel();
     model.Name = `Picture ${this.models.length + 1}`;
     model.UpperLeftRow = upperLeftRow;

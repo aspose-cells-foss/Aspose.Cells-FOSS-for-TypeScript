@@ -1477,6 +1477,7 @@ export class LegacyWorkbook {
 
 import { readFileSync, writeFileSync } from "fs";
 import { DefinedNameCollection } from "./DefinedNameCollection";
+import { createIndexerProxy } from "./IndexerProxy";
 import { DefinedNameModel } from "./Core/DefinedNameModel";
 import { DocumentProperties } from "./DocumentProperties";
 import { CellsException } from "./CellsException";
@@ -1484,7 +1485,6 @@ import { LoadDiagnostics } from "./LoadDiagnostics";
 import { LoadOptions } from "./LoadOptions";
 import { SaveFormat } from "./enums";
 import { SaveOptions } from "./SaveOptions";
-import { UnsupportedFeatureException } from "./UnsupportedFeatureException";
 import { WorkbookLoadException } from "./WorkbookLoadException";
 import { WorkbookModel } from "./Core/WorkbookModel";
 import { WorkbookProperties } from "./WorkbookProperties";
@@ -1494,6 +1494,7 @@ import { WorksheetCollection, createWorksheetCollection } from "./worksheetColle
 import { WorksheetModel } from "./Core/WorksheetModel";
 // Supplied by the serializer module once it is implemented in api/xlsx/WorkbookSerializer.ts.
 import { loadWorkbook, saveWorkbook } from "./XlsxWorkbookSerializer";
+import { PdfExportAdapter } from "./PdfExportAdapter";
 
 /** Minimal in-memory stream shim supported by save and load overloads. */
 export interface InputStream {
@@ -1527,7 +1528,10 @@ export class Workbook {
     this.settings = new WorkbookSettings(this.model.Settings);
     this.properties = new WorkbookProperties(this.model);
     this.documentProperties = new DocumentProperties(this.model.DocumentProperties);
-    this.definedNames = new DefinedNameCollection(this);
+    const definedNames = new DefinedNameCollection(this);
+    this.definedNames = createIndexerProxy(definedNames, (key) =>
+      typeof key === "number" ? definedNames.get(key) : undefined,
+    );
     this.LoadDiagnostics = new LoadDiagnostics();
 
     if (targetOrFileName === undefined) {
@@ -1635,6 +1639,15 @@ export class Workbook {
     const options = Workbook.resolveSaveOptions(target, formatOrOptions);
 
     try {
+      if (options.SaveFormat === SaveFormat.Pdf) {
+        if (typeof target === "string") {
+          PdfExportAdapter.exportToFile(this.model, target, options);
+        } else {
+          PdfExportAdapter.exportToStream(this.model, target, options);
+        }
+        return;
+      }
+
       const buffer = Workbook.serialize(this.model, options);
       if (typeof target === "string") {
         writeFileSync(target, buffer);
@@ -1679,10 +1692,6 @@ export class Workbook {
   }
 
   private static serialize(model: WorkbookModel, options: SaveOptions): Buffer {
-    if (options.SaveFormat === SaveFormat.Pdf) {
-      throw new UnsupportedFeatureException("PDF export is not wired yet.");
-    }
-
     return saveWorkbook(model, options);
   }
 

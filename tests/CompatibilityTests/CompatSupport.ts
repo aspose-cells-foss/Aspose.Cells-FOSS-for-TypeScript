@@ -121,6 +121,7 @@ export function listXlsxFiles(directory: string): string[] {
   const files = fs
     .readdirSync(directory)
     .filter((name) => name.toLowerCase().endsWith(".xlsx"))
+    .filter((name) => !name.startsWith("~$"))
     .filter((name) => fs.statSync(path.join(directory, name)).isFile())
     .sort((left, right) => left.localeCompare(right));
 

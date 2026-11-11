@@ -245,7 +245,7 @@ export function displayStringValueAppliesExtendedDateTokens(): void {
   const workbook = new Workbook();
   workbook.Settings.Culture = "en-US";
   const sheet = workbook.Worksheets[0];
-  const timestamp = new Date(2024, 5, 6, 7, 8, 9, 345);
+  const timestamp = new Date(2024, 4, 6, 7, 8, 9, 345);
 
   const monthInitial = sheet.Cells["A4"];
   monthInitial.PutValue(timestamp);

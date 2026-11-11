@@ -14,6 +14,7 @@ import { SaveFormat } from "./enums";
 import { SaveOptions } from "./SaveOptions";
 import { WorkbookSaveException } from "./WorkbookSaveException";
 import { UnsupportedFeatureException } from "./UnsupportedFeatureException";
+import { ChartXmlTemplates } from "./ChartXmlTemplates";
 import { ZipReader, ZipWriter } from "./Packaging/Archive";
 import {
   PACKAGE_RELATIONSHIP_NS,
@@ -210,7 +211,8 @@ export function saveWorkbook(model: WorkbookModel, options: SaveOptions): Buffer
         worksheet.Pictures.length > 0 ||
         worksheet.ShapeImages.length > 0 ||
         worksheet.Charts.length > 0 ||
-        worksheet.PreservedCharts.length > 0
+        worksheet.PreservedCharts.length > 0 ||
+        worksheet.PreservedDrawingRelationships.length > 0
       ) {
         writeXmlEntry(
           archive,
@@ -549,7 +551,7 @@ function writeChartFiles(
 ): number {
   const chartFileName = (chart.IsChartEx ? "chartEx" : "chart") + String(globalChartNumber) + ".xml";
   const chartPath = "xl/charts/" + chartFileName;
-  archive.addText(chartPath, normalizeChartXmlForSave(chart.RawChartXml));
+  archive.addText(chartPath, buildChartXml(chart));
 
   if (chart.CompanionFiles.length === 0) {
     return userShapesDrawingCounter;
@@ -595,6 +597,17 @@ function writeChartFiles(
 
   writeXmlEntry(archive, "xl/charts/_rels/" + chartFileName + ".rels", companionRels);
   return userShapesDrawingCounter;
+}
+
+function buildChartXml(chart: ChartModel): string {
+  const rawChartXml = chart.RawChartXml;
+  if (rawChartXml !== null && rawChartXml.length > 0) {
+    return normalizeChartXmlForSave(rawChartXml);
+  }
+
+  // Programmatically created charts carry no raw XML; generate the chart part from the model
+  // exactly like Aspose.Cells_FOSS/XlsxWorkbookSerializer.cs does through ChartXmlTemplates.
+  return ChartXmlTemplates.Build(chart.ChartType, chart.DataRange, chart.Name);
 }
 
 function normalizeChartXmlForSave(rawChartXml: string | null): string {

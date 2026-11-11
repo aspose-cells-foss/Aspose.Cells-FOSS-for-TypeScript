@@ -116,6 +116,7 @@ import { CellsException } from "./CellsException";
 import { Chart } from "./chart";
 import { ChartType } from "./enums";
 import { ChartModel } from "./Core/ChartModel";
+import { ChartXmlTemplates } from "./ChartXmlTemplates";
 
 // Implemented by serializer module.
 /** Represents a collection of charts on a worksheet. */
@@ -163,8 +164,12 @@ export class ChartCollection {
     }
 
     const model = new ChartModel();
-    model.Name = `Chart ${this.models.length + 1}`;
+    const chartName = `Chart ${this.models.length + 1}`;
+    model.Name = chartName;
     model.ChartType = type as unknown as import("./ChartType").ChartType;
+    model.DataRange = dataRange;
+    // Modern chartex types throw from the template builder, matching ChartCollection.Add in .NET.
+    model.RawChartXml = ChartXmlTemplates.Build(model.ChartType, dataRange, chartName);
     model.UpperLeftRow = upperLeftRow;
     model.UpperLeftColumn = upperLeftColumn;
     model.LowerRightRow = lowerRightRow;

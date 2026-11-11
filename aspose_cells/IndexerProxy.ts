@@ -21,6 +21,7 @@ const ReservedNames: ReadonlySet<string> = new Set<string>([
 export function createIndexerProxy<T extends object>(
   target: T,
   resolve: (key: string | number) => unknown,
+  assign?: (key: string | number, value: unknown) => void,
 ): T {
   return new Proxy(target, {
     get(obj, property, receiver) {
@@ -41,6 +42,14 @@ export function createIndexerProxy<T extends object>(
       }
 
       return resolve(property);
+    },
+    set(obj, property, value, receiver) {
+      if (assign !== undefined && typeof property === "string" && /^-?\d+$/.test(property)) {
+        assign(Number(property), value);
+        return true;
+      }
+
+      return Reflect.set(obj, property, value, receiver);
     },
   });
 }

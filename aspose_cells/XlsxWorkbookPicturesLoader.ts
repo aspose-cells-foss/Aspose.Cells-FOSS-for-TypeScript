@@ -1,4 +1,4 @@
-import { ChartCompanionFile, ChartModel } from "./Core/ChartModel";
+import { ChartCompanionFile, ChartModel, ChartSeriesModel } from "./Core/ChartModel";
 import { ChartType } from "./ChartType";
 import { DrawingRelationshipModel } from "./Core/DrawingRelationshipModel";
 import { PictureModel } from "./Core/PictureModel";
@@ -1213,6 +1213,7 @@ function loadChartForRelationship(
   model.IsChartEx = isChartEx;
   model.OriginalRId = relationshipId;
   model.RawGraphicFrameXml = rawContainerElement !== null ? serializeNode(rawContainerElement) : null;
+  loadChartSeries(model, rawChartXml);
 
   loadChartCompanionFiles(model, chartUri, archive, diagnostics, options, sheetName);
   return model;
@@ -1294,6 +1295,71 @@ function detectChartType(rawXml: string | null): ChartType {
   }
 
   return ChartType.Unknown;
+}
+
+/** Populates the chart data range and series list from the chart definition XML. */
+function loadChartSeries(model: ChartModel, rawChartXml: string | null): void {
+  if (rawChartXml === null || rawChartXml.length === 0) {
+    return;
+  }
+
+  let root: XmlNode | null;
+  try {
+    root = documentRoot(parseXml(rawChartXml));
+  } catch {
+    return;
+  }
+
+  if (root === null) {
+    return;
+  }
+
+  for (const seriesElement of descendants(root, "ser")) {
+    const series = new ChartSeriesModel();
+    series.Index = parseSeriesNumber(attribute(firstElement(seriesElement, "idx"), "val"));
+    series.Order = parseSeriesNumber(attribute(firstElement(seriesElement, "order"), "val"));
+
+    const valuesElement = firstElement(seriesElement, "val") ?? firstElement(seriesElement, "yVal");
+    series.ValuesFormula = readReferenceFormula(valuesElement);
+
+    const categoriesElement = firstElement(seriesElement, "cat");
+    series.CategoriesFormula = readReferenceFormula(categoriesElement);
+
+    model.Series.push(series);
+  }
+
+  if (model.Series.length > 0) {
+    model.DataRange = model.Series[0].ValuesFormula;
+  }
+}
+
+function readReferenceFormula(referenceElement: XmlNode | null): string {
+  if (referenceElement === null) {
+    return "";
+  }
+
+  for (const referenceName of ["numRef", "strRef", "multiLvlStrRef"]) {
+    const reference = firstElement(referenceElement, referenceName);
+    if (reference === null) {
+      continue;
+    }
+
+    const formula = firstElement(reference, "f");
+    if (formula !== null) {
+      return textOf(formula).trim();
+    }
+  }
+
+  return "";
+}
+
+function parseSeriesNumber(value: string | null): number {
+  if (value === null || value.trim().length === 0) {
+    return 0;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  return Number.isNaN(parsed) ? 0 : parsed;
 }
 
 function loadChartCompanionFiles(

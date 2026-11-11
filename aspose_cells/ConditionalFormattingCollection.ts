@@ -47,12 +47,7 @@ export class ConditionalFormattingCollection {
   }
 
   public RemoveArea(startRow: number, startColumn: number, totalRows: number, totalColumns: number): void {
-    const area = CellArea.CreateCellArea(
-      startRow,
-      startColumn,
-      startRow + totalRows - 1,
-      startColumn + totalColumns - 1,
-    );
+    const area = new CellArea(startRow, startColumn, totalRows, totalColumns);
 
     for (let index = this.collections.length - 1; index >= 0; index--) {
       const collection = new FormatConditionCollection(this.collections, this.collections[index]);

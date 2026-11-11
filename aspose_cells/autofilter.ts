@@ -63,6 +63,7 @@ import { AutoFilterTop10Model } from "./Core/AutoFilterTop10Model";
 import { CellsException } from "./CellsException";
 import { FilterColumnModel } from "./Core/FilterColumnModel";
 import { FilterOperatorType } from "./enums";
+import { toRangeReference, tryParseMergeReference } from "./XlsxWorkbookSerializerCommon";
 
 /** Trims an optional text value, returning an empty string when nothing remains. */
 function normalizeOptionalText(value: string | null | undefined): string {
@@ -82,19 +83,38 @@ function normalizeRequiredText(value: string, parameterName: string): string {
   return value;
 }
 
-/** Normalizes an optional cell or range reference. */
+/** Normalizes an optional cell or range reference, mirroring AutoFilterSupport.NormalizeOptionalRange. */
 function normalizeOptionalRange(value: string | null | undefined): string {
-  return normalizeOptionalText(value);
+  if (value === null || value === undefined || value.trim().length === 0) {
+    return "";
+  }
+
+  const normalized = tryNormalizeRange(value);
+  if (normalized === null) {
+    throw new CellsException("Range must be a valid cell or range reference.");
+  }
+
+  return normalized;
 }
 
-/** Normalizes a required cell or range reference. */
+/** Normalizes a required cell or range reference, mirroring AutoFilterSupport.NormalizeRequiredRange. */
 function normalizeRequiredRange(value: string, parameterName: string): string {
-  const normalized = normalizeOptionalText(value);
-  if (normalized.length === 0) {
+  if (value === null || value === undefined || value.trim().length === 0) {
+    throw new CellsException(parameterName + " must be a valid cell or range reference.");
+  }
+
+  const normalized = tryNormalizeRange(value);
+  if (normalized === null) {
     throw new CellsException(parameterName + " must be a valid cell or range reference.");
   }
 
   return normalized;
+}
+
+/** Parses a trimmed range reference and returns its normalized form, or null when invalid. */
+function tryNormalizeRange(value: string): string | null {
+  const region = tryParseMergeReference(value.trim());
+  return region === null ? null : toRangeReference(region);
 }
 
 /** Maps an operator to its SpreadsheetML attribute name, mirroring AutoFilterSupport.ToOperatorName. */
@@ -626,13 +646,25 @@ export class FilterColumnCollection {
 
   public Add(columnIndex: number): number {
     if (columnIndex < 0) {
-      throw new CellsException("Filter column index must be non-negative.");
+      throw new CellsException("Filter column index must be zero or greater.");
+    }
+
+    for (const existing of this.models) {
+      if (existing.ColumnIndex === columnIndex) {
+        throw new CellsException("A filter column for the specified column index already exists.");
+      }
     }
 
     const model = new FilterColumnModel();
     model.ColumnIndex = columnIndex;
-    this.models.push(model);
-    return this.models.length - 1;
+
+    let insertIndex = 0;
+    while (insertIndex < this.models.length && this.models[insertIndex].ColumnIndex < columnIndex) {
+      insertIndex++;
+    }
+
+    this.models.splice(insertIndex, 0, model);
+    return insertIndex;
   }
 
   public RemoveAt(index: number): void {
@@ -731,7 +763,7 @@ export class AutoFilter {
   }
 
   public set Range(value: string) {
-    this.model.Range = value === null || value === undefined ? "" : value.trim();
+    this.model.Range = normalizeOptionalRange(value);
   }
 
   public Clear(): void {

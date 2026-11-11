@@ -97,8 +97,13 @@ export class CellArea {
     return this.EndColumn - this.StartColumn + 1;
   }
 
-  /** Creates a cell area from zero-based row/column bounds. */
-  public static CreateCellArea(startRow: number, startColumn: number, endRow: number, endColumn: number): CellArea;
+  /** Creates a cell area from a start row/column and an end row/column. */
+  public static CreateCellArea(
+    startRow: number,
+    startColumn: number,
+    endRow: number,
+    endColumn: number,
+  ): CellArea;
   /** Creates a cell area from two A1-style cell references. */
   public static CreateCellArea(startCellName: string, endCellName: string): CellArea;
   public static CreateCellArea(
@@ -137,12 +142,7 @@ export class CellArea {
       throw new RangeError("endColumn");
     }
 
-    const area = new CellArea();
-    area.StartRow = startRow;
-    area.StartColumn = startColumn;
-    area.EndRow = endRow;
-    area.EndColumn = endColumn;
-    return area;
+    return new CellArea(startRow, startColumn, endRow - startRow + 1, endColumn - startColumn + 1);
   }
 
   /** Compares two cell areas by their top-left corner, then their bottom-right corner. */

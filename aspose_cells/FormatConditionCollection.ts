@@ -100,7 +100,7 @@ export class FormatConditionCollection {
 
   public RemoveAreaByBounds(startRow: number, startColumn: number, totalRows: number, totalColumns: number): void {
     this.RemoveAreaByArea(
-      CellArea.CreateCellArea(startRow, startColumn, startRow + totalRows - 1, startColumn + totalColumns - 1),
+      new CellArea(startRow, startColumn, totalRows, totalColumns),
     );
   }
 
@@ -279,5 +279,5 @@ function addIfNonEmpty(
     return;
   }
 
-  areas.push(CellArea.CreateCellArea(firstRow, firstColumn, lastRow, lastColumn));
+  areas.push(new CellArea(firstRow, firstColumn, lastRow - firstRow + 1, lastColumn - firstColumn + 1));
 }

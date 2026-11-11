@@ -25,7 +25,7 @@ export function buildAutoFilterElement(worksheet: WorksheetModel, differentialFo
     return null;
   }
 
-  const element = XmlElement.create("autoFilter").attr("ref", autoFilter.Range);
+  const element = XmlElement.createWithSpacedSelfClosing("autoFilter").attr("ref", autoFilter.Range);
   const orderedColumns = getOrderedFilterColumns(autoFilter.FilterColumns);
   for (const filterColumn of orderedColumns) {
     if (!filterColumn.HasStoredState()) {
@@ -138,7 +138,7 @@ function buildFilterColumnElement(model: FilterColumnModel, differentialFormatCo
     return null;
   }
 
-  const element = XmlElement.create("filterColumn").attr("colId", model.ColumnIndex);
+  const element = XmlElement.createWithSpacedSelfClosing("filterColumn").attr("colId", model.ColumnIndex);
   if (model.HiddenButton) {
     element.boolAttr("hiddenButton", true);
   }
@@ -171,9 +171,9 @@ function buildFiltersElement(filters: string[]): XmlElement | null {
     return null;
   }
 
-  const element = XmlElement.create("filters");
+  const element = XmlElement.createWithSpacedSelfClosing("filters");
   for (const filter of filters) {
-    element.child(XmlElement.create("filter").attr("val", filter));
+    element.child(XmlElement.createWithSpacedSelfClosing("filter").attr("val", filter));
   }
 
   return element;
@@ -184,13 +184,13 @@ function buildCustomFiltersElement(model: FilterColumnModel): XmlElement | null 
     return null;
   }
 
-  const element = XmlElement.create("customFilters");
+  const element = XmlElement.createWithSpacedSelfClosing("customFilters");
   if (model.CustomFiltersAnd) {
     element.boolAttr("and", true);
   }
 
   for (const filter of model.CustomFilters) {
-    const customFilter = XmlElement.create("customFilter").attr("val", filter.Value);
+    const customFilter = XmlElement.createWithSpacedSelfClosing("customFilter").attr("val", filter.Value);
     if (!isEmptyString(filter.Operator)) {
       customFilter.attr("operator", filter.Operator);
     }
@@ -206,7 +206,7 @@ function buildColorFilterElement(model: AutoFilterColorFilterModel, differential
     return null;
   }
 
-  const element = XmlElement.create("colorFilter").attr("dxfId", model.DifferentialStyleId);
+  const element = XmlElement.createWithSpacedSelfClosing("colorFilter").attr("dxfId", model.DifferentialStyleId);
   if (model.CellColor) {
     element.boolAttr("cellColor", true);
   }
@@ -219,7 +219,7 @@ function buildDynamicFilterElement(model: AutoFilterDynamicFilterModel): XmlElem
     return null;
   }
 
-  const element = XmlElement.create("dynamicFilter");
+  const element = XmlElement.createWithSpacedSelfClosing("dynamicFilter");
   if (!isEmptyString(model.Type)) {
     element.attr("type", model.Type);
   }
@@ -240,7 +240,7 @@ function buildTop10Element(model: AutoFilterTop10Model): XmlElement | null {
     return null;
   }
 
-  const element = XmlElement.create("top10");
+  const element = XmlElement.createWithSpacedSelfClosing("top10");
   if (!model.Top) {
     element.attr("top", 0);
   }
@@ -265,7 +265,7 @@ function buildSortStateElement(model: AutoFilterSortStateModel, differentialForm
     return null;
   }
 
-  const element = XmlElement.create("sortState").attr("ref", model.Ref);
+  const element = XmlElement.createWithSpacedSelfClosing("sortState").attr("ref", model.Ref);
   if (model.ColumnSort) {
     element.boolAttr("columnSort", true);
   }
@@ -283,7 +283,7 @@ function buildSortStateElement(model: AutoFilterSortStateModel, differentialForm
       continue;
     }
 
-    const conditionElement = XmlElement.create("sortCondition").attr("ref", condition.Ref);
+    const conditionElement = XmlElement.createWithSpacedSelfClosing("sortCondition").attr("ref", condition.Ref);
     const sortBy = normalizeSortBy(condition.SortBy);
     if (condition.Descending) {
       conditionElement.boolAttr("descending", true);

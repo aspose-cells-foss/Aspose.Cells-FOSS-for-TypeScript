@@ -68,7 +68,8 @@ export class Font {
   }
 
   public ToString(): string {
-    return `Font(Name=${this.Name}, Size=${this.Size}, Bold=${this.IsBold}, Italic=${this.IsItalic}, Underline=${this.Underline}, Strikeout=${this.IsStrikeout}, Argb=${this.ArgbColor})`;
+    const underline = FontUnderlineType[this.Underline] ?? String(this.Underline);
+    return `Font(Name=${this.Name}, Size=${this.Size}, Bold=${this.IsBold ? "True" : "False"}, Italic=${this.IsItalic ? "True" : "False"}, Underline=${underline}, Strikeout=${this.IsStrikeout ? "True" : "False"}, Argb=${this.ArgbColor})`;
   }
 
   public toString(): string {

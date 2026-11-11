@@ -9,6 +9,7 @@ import { WorksheetDataExtractor } from "./WorksheetDataExtractor";
 import { PrintAreaRanges } from "./PrintAreaRanges";
 import { PdfTextDocumentSession } from "./PdfTextDocumentSession";
 import { SheetPdfRenderer } from "./SheetPdfRenderer";
+import type { PageSetupData } from "./types";
 
 /**
  * Entry point for XLSX-to-PDF export. Orchestrates layout, pagination, and rendering
@@ -51,7 +52,7 @@ export class WorkbookPdfExporter {
 
     const stream = fs.createWriteStream(outputPath);
 
-    // 先建立完成通知，避免 doc/stream 提前触发 error 或 finish 时 Promise 永不结算
+    // Register the completion listeners before doc.end() so an early error or finish cannot leave the promise unsettled.
     const completion = new Promise<void>((resolve, reject) => {
       stream.on("finish", () => resolve());
       stream.on("error", reject);
@@ -59,22 +60,76 @@ export class WorkbookPdfExporter {
     });
 
     doc.pipe(stream);
+    WorkbookPdfExporter.writePages(doc as any, workbook, pages, context);
 
+    doc.end();
+
+    return completion;
+  }
+
+  /**
+   * Renders the workbook into memory and resolves with the complete PDF bytes.
+   * Used by callers that cannot provide a file path (for example an OutputStream).
+   */
+  static async exportToBuffer(
+    workbook: LegacyWorkbook,
+    options?: PdfSaveOptions,
+  ): Promise<Buffer> {
+    const opts = options ?? new PdfSaveOptions();
+    const context = new RenderContext(opts.DefaultFont);
+
+    if (opts.ConditionalFormattingEvaluationDate) {
+      context.conditionalFormattingEvaluationDate = opts.ConditionalFormattingEvaluationDate;
+    }
+
+    context.pdfTextSession = new PdfTextDocumentSession();
+    context.enableWorksheetTextOptimization = true;
+
+    const pages = WorkbookPdfExporter.buildPages(workbook, context, opts);
+    for (let i = 0; i < pages.length; i++) {
+      pages[i].pageNumber = i + 1;
+      pages[i].totalPages = pages.length;
+    }
+
+    const PDFDocument = (await import("pdfkit")).default;
+    const doc = new PDFDocument({
+      autoFirstPage: false,
+      info: {
+        Creator: "Aspose.Cells FOSS (TypeScript)",
+        Producer: "Aspose.Cells FOSS (pdfkit)",
+      },
+    });
+
+    const chunks: Buffer[] = [];
+    const completion = new Promise<Buffer>((resolve, reject) => {
+      doc.on("data", (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
+      doc.on("end", () => resolve(Buffer.concat(chunks)));
+      doc.on("error", reject);
+    });
+
+    WorkbookPdfExporter.writePages(doc as any, workbook, pages, context);
+    doc.end();
+
+    return completion;
+  }
+
+  private static writePages(
+    doc: any,
+    workbook: LegacyWorkbook,
+    pages: PageLayout[],
+    context: RenderContext,
+  ): void {
     if (pages.length === 0) {
       // A valid PDF needs at least one page - emit blank Letter page
       const { widthPt, heightPt } = PaperSizes.getDimensionsPoints(1);
       doc.addPage({ size: [widthPt, heightPt] });
     }
 
-    const renderer = new SheetPdfRenderer(doc as any, context, workbook.worksheets.styles);
+    const renderer = new SheetPdfRenderer(doc, context, workbook.worksheets.styles);
     for (const page of pages) {
       doc.addPage({ size: [page.pageWidthPt, page.pageHeightPt] });
       renderer.renderPage(page);
     }
-
-    doc.end();
-
-    return completion;
   }
 
   private static buildPages(
@@ -106,7 +161,12 @@ export class WorkbookPdfExporter {
     return pages;
   }
 
-  private static extractPageSetup(_sheet: LegacyWorksheet) {
+  private static extractPageSetup(sheet: LegacyWorksheet): PageSetupData {
+    const attached = (sheet as unknown as { __pdfPageSetup?: PageSetupData }).__pdfPageSetup;
+    if (attached) {
+      return attached;
+    }
+
     // Defaults must match what the HTML/XLSX writers emit for this codebase:
     // <pageSetup orientation="portrait" paperSize="1"/> and
     // <pageMargins left="0.75" right="0.75" top="1" bottom="1" header="0.5" footer="0.5"/>

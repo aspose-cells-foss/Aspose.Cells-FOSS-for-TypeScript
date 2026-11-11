@@ -1,7 +1,9 @@
 import { CellsException } from "./CellsException";
 import { ListColumnModel } from "./Core/ListColumnModel";
 import { ListObjectModel } from "./Core/ListObjectModel";
+import { WorksheetModel } from "./Core/WorksheetModel";
 import { TableStyleType, TotalsCalculation } from "./enums";
+import { ListObjectCollection } from "./ListObjectCollection";
 
 // Implemented by serializer module.
 /** Represents a column of an Excel table. */
@@ -145,7 +147,11 @@ export class ListObject {
   public readonly ListColumns: ListColumnCollection;
   private readonly model: ListObjectModel;
 
-  public constructor(model: ListObjectModel, private readonly owner?: ListObjectModel[]) {
+  public constructor(
+    model: ListObjectModel,
+    private readonly owner?: ListObjectModel[],
+    private readonly worksheetModel?: WorksheetModel,
+  ) {
     this.model = model;
     this.ListColumns = new ListColumnCollection(model.Columns);
   }
@@ -159,7 +165,17 @@ export class ListObject {
   }
 
   public set DisplayName(value: string) {
-    this.model.DisplayName = value ?? "";
+    if (value === null || value === undefined || value.length === 0) {
+      throw new CellsException("Table DisplayName must be non-empty.");
+    }
+
+    ListObjectCollection.validateDisplayName(value);
+    if (this.owner !== undefined) {
+      ListObjectCollection.validateUniqueDisplayName(this.owner, value, this.owner.indexOf(this.model));
+    }
+
+    this.model.DisplayName = value;
+    this.model.Name = value;
   }
 
   public get Name(): string {
@@ -200,6 +216,7 @@ export class ListObject {
 
   public set ShowHeaderRow(value: boolean) {
     this.model.ShowHeaderRow = value;
+    this.model.HasAutoFilter = value;
   }
 
   public get ShowTotals(): boolean {
@@ -207,6 +224,16 @@ export class ListObject {
   }
 
   public set ShowTotals(value: boolean) {
+    if (value === this.model.ShowTotals) {
+      return;
+    }
+
+    if (value) {
+      this.model.EndRow = this.model.EndRow + 1;
+    } else if (this.model.EndRow > this.model.StartRow) {
+      this.model.EndRow = this.model.EndRow - 1;
+    }
+
     this.model.ShowTotals = value;
   }
 
@@ -281,14 +308,18 @@ export class ListObject {
     this.model.HasAutoFilter = false;
   }
 
-  /** Resizes the table to the supplied range. */
+  /** Resizes the table to the supplied range, rebuilding columns from header cells. */
   public Resize(startRow: number, startColumn: number, endRow: number, endColumn: number, hasHeaders: boolean): void {
-    if (startRow < 0 || startColumn < 0) {
-      throw new CellsException("Table origin indices must be non-negative.");
-    }
-
-    if (endRow < startRow || endColumn < startColumn) {
-      throw new CellsException("Table range end must not precede the start.");
+    ListObjectCollection.validateRange(startRow, startColumn, endRow, endColumn);
+    if (this.owner !== undefined) {
+      ListObjectCollection.validateNoOverlap(
+        this.owner,
+        startRow,
+        startColumn,
+        endRow,
+        endColumn,
+        this.owner.indexOf(this.model),
+      );
     }
 
     this.model.StartRow = startRow;
@@ -296,6 +327,8 @@ export class ListObject {
     this.model.EndRow = endRow;
     this.model.EndColumn = endColumn;
     this.model.ShowHeaderRow = hasHeaders;
+    this.model.HasAutoFilter = hasHeaders;
+    ListObjectCollection.rebuildColumns(this.model, this.worksheetModel);
   }
 
   /** Converts the table to a normal cell range. */

@@ -248,8 +248,8 @@ export function cellAreaPublicMembersFollowAsposeStyle(): void {
   const fromNumbers = CellArea.CreateCellArea(0, 0, 2, 2);
   AssertEx.equal(0, fromNumbers.StartRow);
   AssertEx.equal(0, fromNumbers.StartColumn);
-  AssertEx.equal(1, fromNumbers.EndRow);
-  AssertEx.equal(1, fromNumbers.EndColumn);
+  AssertEx.equal(2, fromNumbers.EndRow);
+  AssertEx.equal(2, fromNumbers.EndColumn);
 }
 
 export function worksheetViewMembersFollowSupportedPatterns(): void {

@@ -344,6 +344,7 @@ import { CommentCollection } from "./CommentCollection";
 import { ConditionalFormattingCollection } from "./ConditionalFormattingCollection";
 import { createIndexerProxy } from "./IndexerProxy";
 import { HyperlinkCollection } from "./HyperlinkCollection";
+import type { Hyperlink as HyperlinkValue } from "./hyperlink";
 import { ListObjectCollection } from "./ListObjectCollection";
 import { PageSetup } from "./PageSetup";
 import { PictureCollection } from "./PictureCollection";
@@ -382,8 +383,16 @@ export class Worksheet {
     );
 
     const hyperlinks = new HyperlinkCollection(model.Hyperlinks);
-    this.hyperlinks = createIndexerProxy(hyperlinks, (key) =>
-      typeof key === "number" ? hyperlinks.get(key) : undefined,
+    // Only the hyperlink collection exposes a C#-style indexer setter; other
+    // collections keep read-only bracket access.
+    this.hyperlinks = createIndexerProxy(
+      hyperlinks,
+      (key) => (typeof key === "number" ? hyperlinks.get(key) : undefined),
+      (key, value) => {
+        if (typeof key === "number") {
+          hyperlinks.Set(key, value as HyperlinkValue | null | undefined);
+        }
+      },
     );
 
     const validations = new ValidationCollection(model.Validations);
@@ -400,7 +409,7 @@ export class Worksheet {
     this.protection = new WorksheetProtection(model.Protection);
     this.autoFilter = new AutoFilter(model.AutoFilter);
 
-    const listObjects = new ListObjectCollection(model.ListObjects);
+    const listObjects = new ListObjectCollection(model.ListObjects, model);
     this.listObjects = createIndexerProxy(listObjects, (key) => {
       if (typeof key === "number") {
         return listObjects.get(key);
