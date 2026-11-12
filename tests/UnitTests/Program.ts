@@ -90,6 +90,14 @@ import {
   commentWidthHeightDefaultsAre129And75,
   commentWidthZeroThrows,
 } from "./CommentTests";
+import {
+  htmlDocumentParseConvertsScalarValuesAndEntities,
+  htmlDocumentParsePreservesDimensionsHiddenRowsAndColspan,
+  htmlExportImportRoundtripPreservesScalarValues,
+  htmlSaveOptionsControlTableStyling,
+  htmlWorkbookExportContainsEveryWorksheet,
+  htmlWorksheetExportEscapesTextAndPreservesBlankCells,
+} from "./HtmlTests";
 
 TestRunner.runAndExit("UnitTests", [
   new TestCase("a1_indexers_roundtrip", a1IndexersRoundtrip),
@@ -173,4 +181,10 @@ TestRunner.runAndExit("UnitTests", [
   new TestCase("comment_width_height_defaults_are_129_and_75", commentWidthHeightDefaultsAre129And75),
   new TestCase("comment_width_zero_throws", commentWidthZeroThrows),
   new TestCase("comment_height_zero_throws", commentHeightZeroThrows),
+  new TestCase("html_worksheet_export_escapes_text_and_preserves_blank_cells", htmlWorksheetExportEscapesTextAndPreservesBlankCells),
+  new TestCase("html_workbook_export_contains_every_worksheet", htmlWorkbookExportContainsEveryWorksheet),
+  new TestCase("html_save_options_control_table_styling", htmlSaveOptionsControlTableStyling),
+  new TestCase("html_document_parse_converts_scalar_values_and_entities", htmlDocumentParseConvertsScalarValuesAndEntities),
+  new TestCase("html_document_parse_preserves_dimensions_hidden_rows_and_colspan", htmlDocumentParsePreservesDimensionsHiddenRowsAndColspan),
+  new TestCase("html_export_import_roundtrip_preserves_scalar_values", htmlExportImportRoundtripPreservesScalarValues),
 ]);
